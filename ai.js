@@ -126,7 +126,7 @@ class SystemOneBattleshipController {
   /**
    * Generates strategic candidate cells and descriptions for System One
    */
-  generateCandidates(targetGrid, survivingShips) {
+  generateCandidates(targetGrid, survivingShips, recentShotHistory = []) {
     const activeHits = [];
     for (let r = 0; r < GRID_SIZE; r++) {
       for (let c = 0; c < GRID_SIZE; c++) {
@@ -160,6 +160,9 @@ class SystemOneBattleshipController {
         else if (sameCol) axisFound = 'V';
       }
 
+      // Check the most recent hit in shot history
+      const lastHitShot = [...recentShotHistory].reverse().find(s => s.result === 'HIT');
+
       for (const hit of activeHits) {
         for (const { dc, dr, dir } of deltas) {
           const nc = hit.colIdx + dc;
@@ -169,23 +172,27 @@ class SystemOneBattleshipController {
             if (targetGrid[nr][nc].state === 'empty') {
               const key = coordToKey(nc, nr);
               if (!neighbors.some(n => n.key === key)) {
-                let priorityScore = 10;
+                let priorityScore = 15;
                 let reason = `Flanks confirmed hit at ${coordToKey(hit.colIdx, hit.rowIdx)} to the ${dir}.`;
 
                 if (axisFound === 'H') {
                   if (dr === 0) {
-                    priorityScore += 30; // Direct collinear hit extension
-                    reason = `HIGH PRIORITY: Continues horizontal firing line from active hits towards ${dir}.`;
+                    priorityScore += 40; // Direct collinear hit extension
+                    reason = `HIGH PRIORITY: Continues established horizontal firing line along row ${hit.rowIdx + 1} towards ${dir}.`;
                   } else {
-                    priorityScore -= 5;
+                    priorityScore -= 10;
                   }
                 } else if (axisFound === 'V') {
                   if (dc === 0) {
-                    priorityScore += 30; // Direct collinear hit extension
-                    reason = `HIGH PRIORITY: Continues vertical firing line from active hits towards ${dir}.`;
+                    priorityScore += 40; // Direct collinear hit extension
+                    reason = `HIGH PRIORITY: Continues established vertical firing line along column ${COLS[hit.colIdx]} towards ${dir}.`;
                   } else {
-                    priorityScore -= 5;
+                    priorityScore -= 10;
                   }
+                }
+
+                if (lastHitShot && lastHitShot.coord === coordToKey(hit.colIdx, hit.rowIdx)) {
+                  priorityScore += 15; // Adjacent to the most recent hit
                 }
 
                 priorityScore += density[nr][nc];
@@ -202,7 +209,7 @@ class SystemOneBattleshipController {
       // Take top 4-6 neighbors
       const selected = neighbors.slice(0, 6);
       for (const n of selected) {
-        criteria[n.key] = `[TARGET] Coordinate ${n.key}: ${n.reason} (Water density heat: ${density[n.rowIdx][n.colIdx]})`;
+        criteria[n.key] = `[TARGET] Sector ${n.key}: ${n.reason} (Density heat: ${density[n.rowIdx][n.colIdx]})`;
         candidateMeta[n.key] = {
           colIdx: n.colIdx,
           rowIdx: n.rowIdx,
@@ -260,7 +267,6 @@ class SystemOneBattleshipController {
       if (picked.length >= 5) break;
     }
 
-    // Fallback if not enough diverse
     if (picked.length < 2) {
       for (const cand of huntCandidates) {
         if (!picked.some(p => p.key === cand.key)) {
@@ -271,7 +277,7 @@ class SystemOneBattleshipController {
     }
 
     for (const p of picked) {
-      const parityNote = p.isParity ? `Aligned with ${minShipLen}-tile checkerboard parity grid.` : `Open sector strike.`;
+      const parityNote = p.isParity ? `Aligned with ${minShipLen}-tile checkerboard parity grid.` : `Open sector reconnaissance.`;
       criteria[p.key] = `[HUNT] Sector ${p.key}: Strategic density heat ${p.densityVal}. ${parityNote}`;
       candidateMeta[p.key] = {
         colIdx: p.colIdx,
@@ -287,7 +293,7 @@ class SystemOneBattleshipController {
   /**
    * Request next artillery coordinate from System One
    */
-  async getNextShot(targetGrid, survivingShips) {
+  async getNextShot(targetGrid, survivingShips, recentShotHistory = []) {
     if (this.isRequestInProgress) {
       return null;
     }
@@ -295,7 +301,7 @@ class SystemOneBattleshipController {
     this.isRequestInProgress = true;
     const startTime = performance.now();
 
-    const { criteria, candidateMeta, mode } = this.generateCandidates(targetGrid, survivingShips);
+    const { criteria, candidateMeta, mode } = this.generateCandidates(targetGrid, survivingShips, recentShotHistory);
     const asciiRadar = this.buildAsciiRadar(targetGrid);
     const candidateKeys = Object.keys(criteria);
 
@@ -325,11 +331,41 @@ class SystemOneBattleshipController {
     // Format fleet status
     const fleetDesc = survivingShips.map(s => `${s.name} (${s.length} tiles)`).join(', ');
 
-    // Pure semantic naval tactical state
+    // Format Chronological Recent Salvo History
+    let historyText = "No previous shots fired yet (Opening reconnaissance salvo).";
+    if (recentShotHistory && recentShotHistory.length > 0) {
+      const lastN = recentShotHistory.slice(-6);
+      historyText = lastN.map((s, idx) => {
+        const num = recentShotHistory.length - lastN.length + idx + 1;
+        const outcome = s.result === 'HIT' ? 'DIRECT HIT (Hostile vessel damaged!)' :
+                        s.result === 'SUNK' ? `CONFIRMED SUNK (Enemy ${s.shipName || 'vessel'} neutralized)` :
+                        'MISS (Water splash, open sea)';
+        return `- Salvo #${num}: Sector ${s.coord} -> ${outcome}`;
+      }).join('\n');
+    }
+
+    // Active Tactical Situation
+    let tacticalNotes = '';
+    if (mode === 'TARGET') {
+      const activeHitCoords = [];
+      for (let r = 0; r < GRID_SIZE; r++) {
+        for (let c = 0; c < GRID_SIZE; c++) {
+          if (targetGrid[r][c].state === 'hit') activeHitCoords.push(coordToKey(c, r));
+        }
+      }
+      tacticalNotes = `Confirmed active damaged ship coordinates: [${activeHitCoords.join(', ')}]. Priority: Follow collinear axis to finish sinking this vessel!`;
+    } else {
+      tacticalNotes = `No active damaged vessels floating. Priority: Search open sectors using checkerboard parity pattern to locate surviving enemy fleet.`;
+    }
+
+    // Pure semantic naval tactical state incorporating temporal history
     const stateText = [
       `Game: Classic 10x10 Battleship Naval Warfare.`,
       `Enemy Fleet afloat: ${fleetDesc}.`,
       `Tactical Mode: ${mode === 'TARGET' ? 'TARGET TRACKING (Active hit locked on enemy vessel - destroy ship)' : 'RECON HUNT (Scanning open sectors for enemy fleet)'}.`,
+      `Recent Artillery Salvo History (Chronological):`,
+      historyText,
+      `Tactical Situation: ${tacticalNotes}`,
       `ASCII Radar Map (. = Fog of war, O = Miss, * = Active Hit, X = Sunk vessel):`,
       asciiRadar,
       `Select the single best coordinate to fire the next artillery missile.`

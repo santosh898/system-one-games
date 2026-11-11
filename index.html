@@ -8,6 +8,9 @@
 </head>
 <body class="crt-active">
 
+  <!-- FULLSCREEN FX CANVAS OVERLAY (MISSILES, SMOKE TRAILS, EXPLOSIONS) -->
+  <canvas id="fxCanvas" class="fx-overlay-canvas"></canvas>
+
   <!-- HEADER -->
   <header class="arcade-header">
     <div class="logo-group">
@@ -43,6 +46,12 @@
         
         <!-- BOARD 1 (LEFT) -->
         <div class="board-card" id="boardCardLeft">
+          
+          <!-- SPEECH BUBBLE OVER LEFT BOARD -->
+          <div class="speech-bubble-anchor">
+            <div class="speech-bubble-box" id="speechBubbleLEFT"></div>
+          </div>
+
           <div class="board-header">
             <span class="board-title" id="titleBoardLeft">
               🛡️ YOUR FLEET
@@ -51,18 +60,24 @@
           </div>
 
           <!-- FLEET RACK 1 -->
-          <div class="fleet-rack" id="fleetRackLeft">
-            <!-- Dynamically populated -->
-          </div>
+          <div class="fleet-rack" id="fleetRackLeft"></div>
 
           <!-- GRID 1 -->
-          <div class="grid-frame">
+          <div class="grid-frame" id="frameLeft">
             <div class="naval-grid" id="gridLeft"></div>
+            <!-- Ship SVG Layer Overlay -->
+            <div class="ships-overlay-layer" id="shipsOverlayLeft"></div>
           </div>
         </div>
 
         <!-- BOARD 2 (RIGHT) -->
         <div class="board-card" id="boardCardRight">
+
+          <!-- SPEECH BUBBLE OVER RIGHT BOARD (SYSTEM ONE / CPU) -->
+          <div class="speech-bubble-anchor">
+            <div class="speech-bubble-box" id="speechBubbleRIGHT"></div>
+          </div>
+
           <div class="board-header">
             <span class="board-title" id="titleBoardRight">
               🎯 SYSTEM ONE RADAR
@@ -71,23 +86,35 @@
           </div>
 
           <!-- FLEET RACK 2 -->
-          <div class="fleet-rack" id="fleetRackRight">
-            <!-- Dynamically populated -->
-          </div>
+          <div class="fleet-rack" id="fleetRackRight"></div>
 
           <!-- GRID 2 -->
-          <div class="grid-frame">
+          <div class="grid-frame" id="frameRight">
             <div class="naval-grid clickable" id="gridRight"></div>
+            <!-- Ship SVG Layer Overlay (Visible in Spectator Mode & at Game Over) -->
+            <div class="ships-overlay-layer" id="shipsOverlayRight"></div>
           </div>
         </div>
 
       </div>
 
-      <!-- 1-PLAYER DEPLOYMENT BAR -->
+      <!-- 1-PLAYER DRAG-AND-DROP SHIPYARD DOCK (DEPLOYMENT PHASE) -->
+      <div class="shipyard-dock-container" id="shipyardDockContainer">
+        <div class="dock-header">
+          <span>🏗️ NAVAL DRYDOCK (DRAG & DROP SHIPS TO GRID OR CLICK TO ROTATE)</span>
+          <span style="color: var(--accent-gold); font-size: 8px;">KEYBOARD: PRESS 'R' TO ROTATE</span>
+        </div>
+        <div class="dock-ships-row" id="dockShipsRow">
+          <!-- Dock draggable ship cards populated by JS -->
+        </div>
+      </div>
+
+      <!-- 1-PLAYER DEPLOYMENT ACTION BAR -->
       <div class="placement-bar" id="deploymentBar">
-        <div style="display: flex; gap: 8px; align-items: center;">
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
           <button class="retro-btn btn-primary" id="btnAutoDeploy">🎲 RANDOMIZE FLEET</button>
-          <button class="retro-btn" id="btnRotateShip">🔄 ROTATE SHIP (R)</button>
+          <button class="retro-btn" id="btnClearFleet">🧹 CLEAR GRID</button>
+          <button class="retro-btn" id="btnRotateShip">🔄 ROTATE (R)</button>
           <span style="font-size: 8px; color: var(--text-dim);" id="placementHint">Orientation: HORIZONTAL</span>
         </div>
         <button class="retro-btn btn-gold" id="btnStartBattle">⚔️ ENGAGE BATTLE!</button>
@@ -95,7 +122,7 @@
 
       <!-- SPECTATOR / MATCH CONTROLS BAR -->
       <div class="action-controls-bar" id="actionControlsBar" style="display: none;">
-        <div style="display: flex; gap: 8px; align-items: center;">
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
           <button class="retro-btn btn-primary" id="btnSpectatorPlay">▶ START DUEL</button>
           <button class="retro-btn" id="btnSpectatorStep">⏩ STEP TURN</button>
           <button class="retro-btn" id="btnSpectatorPause">⏸ PAUSE</button>
@@ -188,6 +215,8 @@
   </main>
 
   <script src="audio.js"></script>
+  <script src="ships.js"></script>
+  <script src="fx.js"></script>
   <script src="ai.js"></script>
   <script src="game.js"></script>
 </body>

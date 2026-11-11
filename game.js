@@ -1,6 +1,11 @@
 /**
- * 16-Bit Retro Battleship Game Engine
- * System One vs Player & System One vs Normal Computer Spectator Mode
+ * 16-Bit Retro Battleship Game Engine v2.0
+ * Features:
+ * - High-Fidelity SVG Naval Warships
+ * - Interactive Drag-and-Drop Fleet Deployment
+ * - Parabolic Missile / Bomb Arc Flight Animation
+ * - Retro Speech Bubble Reactions on Battleground & Warships
+ * - Dynamic Turn Visual Color & Badge Feedback
  */
 
 const SHIPS_CONFIG = [
@@ -11,6 +16,10 @@ const SHIPS_CONFIG = [
   { id: 'destroyer', name: 'DESTROYER', length: 2 },
 ];
 
+const CELL_SIZE = 32;
+const CELL_GAP = 2;
+const GRID_OFFSET = 26; // 24px header + 2px gap
+
 class BattleshipGame {
   constructor() {
     this.mode = '1P'; // '1P' or 'SPECTATOR'
@@ -20,17 +29,36 @@ class BattleshipGame {
     this.simSpeed = 800; // ms
     this.stepTimeout = null;
 
-    // Board 1: Player (in 1P) or System One (in Spectator)
+    // Boards state
     this.boardLeft = this.createEmptyBoard();
-    this.fleetLeft = [];
+    this.fleetLeft = []; // Array of { id, name, length, isVertical, startR, startC, coords, hits, sunk }
 
-    // Board 2: AI / System One (in 1P) or Normal CPU (in Spectator)
     this.boardRight = this.createEmptyBoard();
     this.fleetRight = [];
 
-    // Targeting memory grids (what each player has explored on the opponent)
+    // Radar memories
     this.radarLeftAgainstRight = this.createEmptyRadar();
     this.radarRightAgainstLeft = this.createEmptyRadar();
+
+    // Chronological artillery shot histories
+    this.shotHistoryAgainstLeft = [];  // Shots fired at Left board
+    this.shotHistoryAgainstRight = []; // Shots fired at Right board
+
+    // Drag and Drop state
+    this.dragState = {
+      isDragging: false,
+      shipId: null,
+      length: 0,
+      isVertical: false,
+      source: null, // 'dock' or 'grid'
+      originR: null,
+      originC: null,
+      hoverR: null,
+      hoverC: null,
+      isValid: false
+    };
+
+    this.placementOrientation = false; // false = Horizontal, true = Vertical
 
     // Stats
     this.stats = {
@@ -41,11 +69,13 @@ class BattleshipGame {
       rightHits: 0
     };
 
-    // DOM Elements
+    // DOM & FX
     this.initDOMElements();
+    window.retroNavalFX.init();
     this.attachEventListeners();
+    this.attachDragEvents();
 
-    // Initial deployment
+    // Start in 1P mode
     this.init1PMode();
   }
 
@@ -55,7 +85,7 @@ class BattleshipGame {
         row: r,
         col: c,
         shipId: null,
-        state: 'empty' // 'empty', 'miss', 'hit', 'sunk'
+        state: 'empty'
       }))
     );
   }
@@ -65,7 +95,7 @@ class BattleshipGame {
       Array.from({ length: 10 }, (_, c) => ({
         row: r,
         col: c,
-        state: 'empty' // 'empty', 'miss', 'hit', 'sunk'
+        state: 'empty'
       }))
     );
   }
@@ -73,6 +103,10 @@ class BattleshipGame {
   initDOMElements() {
     this.gridLeftEl = document.getElementById('gridLeft');
     this.gridRightEl = document.getElementById('gridRight');
+    this.shipsOverlayLeft = document.getElementById('shipsOverlayLeft');
+    this.shipsOverlayRight = document.getElementById('shipsOverlayRight');
+    this.boardCardLeft = document.getElementById('boardCardLeft');
+    this.boardCardRight = document.getElementById('boardCardRight');
     this.titleBoardLeft = document.getElementById('titleBoardLeft');
     this.tagBoardLeft = document.getElementById('tagBoardLeft');
     this.titleBoardRight = document.getElementById('titleBoardRight');
@@ -80,6 +114,8 @@ class BattleshipGame {
     this.fleetRackLeft = document.getElementById('fleetRackLeft');
     this.fleetRackRight = document.getElementById('fleetRackRight');
     this.statusBanner = document.getElementById('statusBanner');
+    this.shipyardDockContainer = document.getElementById('shipyardDockContainer');
+    this.dockShipsRow = document.getElementById('dockShipsRow');
     this.deploymentBar = document.getElementById('deploymentBar');
     this.actionControlsBar = document.getElementById('actionControlsBar');
     this.combatLog = document.getElementById('combatLog');
@@ -92,11 +128,13 @@ class BattleshipGame {
     this.asciiRadarTerminal = document.getElementById('asciiRadarTerminal');
     this.valModelName = document.getElementById('valModelName');
 
-    // Buttons
+    // Controls
     this.btnMode1P = document.getElementById('btnMode1P');
     this.btnModeSpectator = document.getElementById('btnModeSpectator');
     this.btnAutoDeploy = document.getElementById('btnAutoDeploy');
+    this.btnClearFleet = document.getElementById('btnClearFleet');
     this.btnRotateShip = document.getElementById('btnRotateShip');
+    this.placementHint = document.getElementById('placementHint');
     this.btnStartBattle = document.getElementById('btnStartBattle');
     this.btnSpectatorPlay = document.getElementById('btnSpectatorPlay');
     this.btnSpectatorPause = document.getElementById('btnSpectatorPause');
@@ -109,7 +147,6 @@ class BattleshipGame {
   }
 
   attachEventListeners() {
-    // Mode toggles
     this.btnMode1P.addEventListener('click', () => {
       if (this.mode === '1P') return;
       window.retroAudio.playClick();
@@ -122,20 +159,53 @@ class BattleshipGame {
       this.initSpectatorMode();
     });
 
-    // 1P buttons
     this.btnAutoDeploy.addEventListener('click', () => {
       window.retroAudio.playSonar();
       this.randomizePlayerFleet();
       this.render();
-      this.log('DEFENSE', 'FLEET REDEPLOYED TO NEW COORDINATES.');
+      this.log('DEFENSE', 'FLEET AUTO-DEPLOYED TO COMBAT STATIONS.');
+      window.retroNavalFX.showSpeechBubble({
+        boardSide: 'left',
+        speaker: 'PLAYER',
+        text: 'All 5 warships in optimal formation. Ready for engagement!'
+      });
+    });
+
+    this.btnClearFleet.addEventListener('click', () => {
+      window.retroAudio.playClick();
+      this.clearPlayerFleet();
+      this.render();
+      this.log('DEFENSE', 'FLEET CLEARED. WARSHIPS RETURNED TO DRYDOCK.');
+    });
+
+    this.btnRotateShip.addEventListener('click', () => {
+      this.togglePlacementOrientation();
+    });
+
+    // 'R' key rotates ship
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'r' || e.key === 'R') {
+        if (this.phase === 'DEPLOYMENT') {
+          this.togglePlacementOrientation();
+        }
+      }
     });
 
     this.btnStartBattle.addEventListener('click', () => {
+      if (this.fleetLeft.length < 5) {
+        window.retroAudio.playClick();
+        this.statusBanner.textContent = 'DEPLOY ALL 5 SHIPS BEFORE ENGAGING!';
+        window.retroNavalFX.showSpeechBubble({
+          boardSide: 'left',
+          speaker: 'PLAYER',
+          text: 'Admiral, we need all 5 warships placed on the grid first!'
+        });
+        return;
+      }
       window.retroAudio.playLaunch();
       this.start1PBattle();
     });
 
-    // Spectator buttons
     this.btnSpectatorPlay.addEventListener('click', () => {
       window.retroAudio.playClick();
       this.startSpectatorSimulation();
@@ -160,29 +230,169 @@ class BattleshipGame {
       }
     });
 
-    // Speed selector
     this.selectSpeed.addEventListener('change', (e) => {
       const speeds = { turbo: 250, fast: 800, normal: 1600, slow: 3000 };
       this.simSpeed = speeds[e.target.value] || 800;
     });
 
-    // Sound toggle
     this.btnSoundToggle.addEventListener('click', () => {
       const muted = window.retroAudio.toggleMute();
       this.btnSoundToggle.textContent = muted ? '🔇 MUTED' : '🔊 SOUND ON';
     });
 
-    // CRT toggle
     this.btnCrtToggle.addEventListener('click', () => {
       const isActive = document.body.classList.toggle('crt-active');
       this.btnCrtToggle.textContent = isActive ? '📺 CRT: ON' : '📺 CRT: OFF';
     });
 
-    // Clear log
     this.btnClearLog.addEventListener('click', () => {
       this.combatLog.innerHTML = '';
       this.log('SYS', 'LOG CLEARED.');
     });
+  }
+
+  togglePlacementOrientation() {
+    this.placementOrientation = !this.placementOrientation;
+    window.retroAudio.playClick();
+    this.placementHint.textContent = `Orientation: ${this.placementOrientation ? 'VERTICAL' : 'HORIZONTAL'}`;
+    this.btnRotateShip.textContent = `🔄 ROTATE (${this.placementOrientation ? 'VERT' : 'HORIZ'})`;
+    this.renderDock();
+  }
+
+  // --- DRAG AND DROP MECHANICS ---
+
+  attachDragEvents() {
+    // When pointer moves over gridLeft in deployment phase
+    this.gridLeftEl.addEventListener('pointermove', (e) => {
+      if (!this.dragState.isDragging || this.phase !== 'DEPLOYMENT') return;
+
+      const cell = e.target.closest('.grid-cell');
+      if (cell && cell.dataset.col !== undefined) {
+        const c = parseInt(cell.dataset.col, 10);
+        const r = parseInt(cell.dataset.row, 10);
+        this.handleDragHover(c, r);
+      }
+    });
+
+    this.gridLeftEl.addEventListener('pointerleave', () => {
+      if (this.dragState.isDragging) {
+        this.clearGhostHighlight();
+      }
+    });
+
+    // Drop on window pointerup
+    window.addEventListener('pointerup', () => {
+      if (this.dragState.isDragging) {
+        this.finishDragDrop();
+      }
+    });
+  }
+
+  handleDragHover(col, row) {
+    this.dragState.hoverR = row;
+    this.dragState.hoverC = col;
+
+    const length = this.dragState.length;
+    const isVert = this.dragState.isVertical;
+
+    // Check validity
+    let isValid = true;
+    const coords = [];
+
+    for (let i = 0; i < length; i++) {
+      const r = isVert ? row + i : row;
+      const c = isVert ? col : col + i;
+
+      if (r < 0 || r >= 10 || c < 0 || c >= 10) {
+        isValid = false;
+        break;
+      }
+
+      // Check collision with other ships (excluding itself if moving from grid)
+      const existing = this.boardLeft[r][c].shipId;
+      if (existing && existing !== this.dragState.shipId) {
+        isValid = false;
+        break;
+      }
+
+      coords.push({ r, c });
+    }
+
+    this.dragState.isValid = isValid;
+    this.renderGhostHighlight(coords, isValid);
+  }
+
+  renderGhostHighlight(coords, isValid) {
+    this.clearGhostHighlight();
+    const className = isValid ? 'drag-ghost-valid' : 'drag-ghost-invalid';
+
+    coords.forEach(({ r, c }) => {
+      const cellEl = this.gridLeftEl.querySelector(`.grid-cell[data-row="${r}"][data-col="${c}"]`);
+      if (cellEl) {
+        cellEl.classList.add(className);
+      }
+    });
+  }
+
+  clearGhostHighlight() {
+    const ghosts = this.gridLeftEl.querySelectorAll('.drag-ghost-valid, .drag-ghost-invalid');
+    ghosts.forEach(el => el.classList.remove('drag-ghost-valid', 'drag-ghost-invalid'));
+  }
+
+  finishDragDrop() {
+    const { shipId, length, isVertical, isValid, hoverR, hoverC, source, originR, originC } = this.dragState;
+    this.clearGhostHighlight();
+
+    if (isValid && hoverR !== null && hoverC !== null) {
+      // If moving from grid, remove old placement
+      if (source === 'grid') {
+        this.removeShipFromBoard(shipId, this.boardLeft, this.fleetLeft);
+      }
+
+      // Place ship at new coords
+      const coords = [];
+      for (let i = 0; i < length; i++) {
+        const r = isVertical ? hoverR + i : hoverR;
+        const c = isVertical ? hoverC : hoverC + i;
+        this.boardLeft[r][c].shipId = shipId;
+        coords.push({ r, c });
+      }
+
+      const shipCfg = SHIPS_CONFIG.find(s => s.id === shipId);
+      this.fleetLeft.push({
+        id: shipId,
+        name: shipCfg.name,
+        length,
+        isVertical,
+        startR: hoverR,
+        startC: hoverC,
+        coords,
+        hits: 0,
+        sunk: false
+      });
+
+      window.retroAudio.playClick();
+      this.log('DEFENSE', `${shipCfg.name} DEPLOYED TO ${COLS[hoverC]}${hoverR + 1}.`);
+    } else {
+      // Revert if invalid and originated on grid
+      if (source === 'grid' && originR !== null && originC !== null) {
+        // Already still in fleet
+      }
+    }
+
+    this.dragState.isDragging = false;
+    this.render();
+  }
+
+  removeShipFromBoard(shipId, board, fleet) {
+    const idx = fleet.findIndex(s => s.id === shipId);
+    if (idx !== -1) {
+      const ship = fleet[idx];
+      ship.coords.forEach(({ r, c }) => {
+        board[r][c].shipId = null;
+      });
+      fleet.splice(idx, 1);
+    }
   }
 
   // --- INITIALIZATION MODES ---
@@ -196,6 +406,7 @@ class BattleshipGame {
     this.btnMode1P.classList.add('active');
     this.btnModeSpectator.classList.remove('active');
 
+    this.shipyardDockContainer.style.display = 'flex';
     this.deploymentBar.style.display = 'flex';
     this.actionControlsBar.style.display = 'none';
 
@@ -205,22 +416,30 @@ class BattleshipGame {
     this.tagBoardRight.textContent = 'FOG OF WAR (HIDDEN)';
     this.tagBoardRight.className = 'board-tag';
 
-    this.statusBanner.textContent = 'DEPLOY FLEET: POSITION YOUR WARSHIPS & ENGAGE';
+    this.statusBanner.textContent = 'DEPLOY FLEET: DRAG SHIPS TO GRID OR RANDOMIZE';
 
-    // Clear boards
     this.boardLeft = this.createEmptyBoard();
     this.boardRight = this.createEmptyBoard();
     this.radarLeftAgainstRight = this.createEmptyRadar();
     this.radarRightAgainstLeft = this.createEmptyRadar();
+    this.shotHistoryAgainstLeft = [];
+    this.shotHistoryAgainstRight = [];
 
-    // Deploy fleets
+    // Auto-deploy initially for immediate action
     this.randomizePlayerFleet();
     this.fleetRight = this.placeFleetRandomly(this.boardRight);
 
     this.resetStats();
+    this.setTurnVisuals('NONE');
     this.render();
-    this.log('SYS', 'MODE: 1-PLAYER (PLAYER VS SYSTEM ONE).');
-    this.log('SYS', 'AI FLEET DEPLOYED IN SECRET SECTORS.');
+
+    this.log('SYS', '1-PLAYER MODE ACTIVE: CREW STANDING BY FOR ORDERS.');
+    window.retroNavalFX.showSpeechBubble({
+      boardSide: 'left',
+      role: 'captain',
+      text: 'Captain Vance: All departments reporting ready. Awaiting battle stations orders!',
+      meta: 'BATTLE READY'
+    });
   }
 
   initSpectatorMode() {
@@ -232,33 +451,40 @@ class BattleshipGame {
     this.btnModeSpectator.classList.add('active');
     this.btnMode1P.classList.remove('active');
 
+    this.shipyardDockContainer.style.display = 'none';
     this.deploymentBar.style.display = 'none';
     this.actionControlsBar.style.display = 'flex';
 
     this.titleBoardLeft.textContent = '🧠 SYSTEM ONE FLEET';
-    this.tagBoardLeft.textContent = 'SPECTATOR: AI VISIBLE';
     this.tagBoardLeft.className = 'board-tag spectator-tag';
 
     this.titleBoardRight.textContent = '🤖 NORMAL CPU FLEET';
     this.tagBoardRight.textContent = 'SPECTATOR: CPU VISIBLE';
     this.tagBoardRight.className = 'board-tag spectator-tag';
 
-    this.statusBanner.textContent = 'SPECTATOR MODE: BOTH BATTLEGROUNDS VISIBLE';
+    this.statusBanner.textContent = 'SPECTATOR DUEL: BOTH BATTLEGROUNDS VISIBLE';
 
-    // Clear boards
     this.boardLeft = this.createEmptyBoard();
     this.boardRight = this.createEmptyBoard();
     this.radarLeftAgainstRight = this.createEmptyRadar();
     this.radarRightAgainstLeft = this.createEmptyRadar();
+    this.shotHistoryAgainstLeft = [];
+    this.shotHistoryAgainstRight = [];
 
-    // Deploy fleets for both AI and CPU
     this.fleetLeft = this.placeFleetRandomly(this.boardLeft);
     this.fleetRight = this.placeFleetRandomly(this.boardRight);
 
     this.resetStats();
+    this.setTurnVisuals('SYSTEM_ONE');
     this.render();
-    this.log('SYS', 'MODE: SPECTATOR (SYSTEM ONE AI VS NORMAL CPU).');
-    this.log('SYS', 'BOTH BATTLEGROUNDS FULLY REVEALED.');
+
+    this.log('SYS', 'SPECTATOR MODE ACTIVE: SYSTEM ONE VS NORMAL CPU.');
+    window.retroNavalFX.showSpeechBubble({
+      boardSide: 'left',
+      role: 'sonar',
+      text: 'Sonar Officer Henderson: Active sonar scan tracking CPU acoustic profile across open grid.',
+      meta: 'RADAR LOCK'
+    });
   }
 
   resetStats() {
@@ -273,6 +499,11 @@ class BattleshipGame {
 
   // --- FLEET PLACEMENT ---
 
+  clearPlayerFleet() {
+    this.boardLeft = this.createEmptyBoard();
+    this.fleetLeft = [];
+  }
+
   randomizePlayerFleet() {
     this.boardLeft = this.createEmptyBoard();
     this.fleetLeft = this.placeFleetRandomly(this.boardLeft);
@@ -285,20 +516,19 @@ class BattleshipGame {
       let placed = false;
       let attempts = 0;
 
-      while (!placed && attempts < 200) {
+      while (!placed && attempts < 250) {
         attempts++;
-        const isHorizontal = Math.random() < 0.5;
-        const maxRow = isHorizontal ? 10 : 10 - shipCfg.length;
-        const maxCol = isHorizontal ? 10 - shipCfg.length : 10;
+        const isVertical = Math.random() < 0.5;
+        const maxRow = isVertical ? 10 - shipCfg.length : 10;
+        const maxCol = isVertical ? 10 : 10 - shipCfg.length;
         const startR = Math.floor(Math.random() * maxRow);
         const startC = Math.floor(Math.random() * maxCol);
 
-        // Check collision
         let collision = false;
         const coords = [];
         for (let i = 0; i < shipCfg.length; i++) {
-          const r = isHorizontal ? startR : startR + i;
-          const c = isHorizontal ? startC + i : startC;
+          const r = isVertical ? startR + i : startR;
+          const c = isVertical ? startC : startC + i;
           if (board[r][c].shipId !== null) {
             collision = true;
             break;
@@ -314,6 +544,9 @@ class BattleshipGame {
             id: shipCfg.id,
             name: shipCfg.name,
             length: shipCfg.length,
+            isVertical,
+            startR,
+            startC,
             coords,
             hits: 0,
             sunk: false
@@ -331,14 +564,24 @@ class BattleshipGame {
   start1PBattle() {
     this.phase = 'BATTLE';
     this.currentTurn = 'PLAYER';
+    this.shipyardDockContainer.style.display = 'none';
     this.deploymentBar.style.display = 'none';
     this.actionControlsBar.style.display = 'flex';
-    // Hide play/step in 1P mode
     this.btnSpectatorPlay.style.display = 'none';
     this.btnSpectatorPause.style.display = 'none';
     this.btnSpectatorStep.style.display = 'none';
+
+    this.setTurnVisuals('PLAYER');
     this.statusBanner.textContent = 'YOUR TURN: SELECT ENEMY RADAR COORDINATE TO FIRE!';
-    this.log('SYS', 'BATTLE ENGAGED! COMMENCING ARTILLERY FIRE.');
+    this.log('SYS', 'BATTLE ENGAGED! TARGET ENEMY RADAR WITH ARTILLERY.');
+
+    window.retroNavalFX.showSpeechBubble({
+      boardSide: 'left',
+      role: 'captain',
+      text: 'Captain Vance: General quarters! All gun batteries, commence tactical bombardment!',
+      meta: 'BATTLE STATIONS'
+    });
+
     this.render();
   }
 
@@ -349,140 +592,254 @@ class BattleshipGame {
 
     const cell = this.boardRight[row][col];
     if (cell.state !== 'empty') {
-      // Already shot
       window.retroAudio.playClick();
       return;
     }
 
     this.currentTurn = 'PROCESSING';
     this.stats.leftShots++;
-    window.retroAudio.playLaunch();
     const coordName = `${COLS[col]}${row + 1}`;
 
-    await this.delay(260);
+    const hitShip = cell.shipId ? this.fleetRight.find(s => s.id === cell.shipId) : null;
+    const isHit = !!hitShip;
+    const willSink = isHit && (hitShip.hits + 1 >= hitShip.length);
 
-    // Evaluate hit or miss
-    if (cell.shipId) {
-      cell.state = 'hit';
-      this.radarLeftAgainstRight[row][col].state = 'hit';
-      this.stats.leftHits++;
+    // Get DOM elements for missile flight arc
+    const fromEl = this.boardCardLeft;
+    const toEl = this.gridRightEl.querySelector(`.grid-cell[data-row="${row}"][data-col="${col}"]`);
 
-      // Update fleet
-      const hitShip = this.fleetRight.find(s => s.id === cell.shipId);
-      hitShip.hits++;
+    window.retroAudio.playLaunch();
+    window.retroNavalFX.showSpeechBubble({
+      boardSide: 'left',
+      role: 'weapons',
+      text: `Weapons Officer Kowalski: Main battery fired on sector ${coordName}!`,
+      meta: `LAUNCH -> ${coordName}`
+    });
 
-      if (hitShip.hits >= hitShip.length) {
-        hitShip.sunk = true;
-        hitShip.coords.forEach(({ r, c }) => {
-          this.boardRight[r][c].state = 'sunk';
-          this.radarLeftAgainstRight[r][c].state = 'sunk';
+    // Launch artillery projectile arc animation
+    window.retroNavalFX.launchArtillery({
+      fromEl,
+      toEl,
+      isHit,
+      isSunk: willSink,
+      onImpact: async () => {
+        const shotResult = isHit ? (willSink ? 'SUNK' : 'HIT') : 'MISS';
+        this.shotHistoryAgainstRight.push({
+          turn: this.stats.turns,
+          shooter: 'PLAYER',
+          coord: coordName,
+          result: shotResult,
+          shipName: hitShip ? hitShip.name : null
         });
-        window.retroAudio.playSunk();
-        this.log('HIT', `DIRECT HIT ON ${coordName}! ENEMY ${hitShip.name} SUNK!`);
-        this.statusBanner.textContent = `💥 ENEMY ${hitShip.name} DESTROYED!`;
-      } else {
-        window.retroAudio.playHit();
-        this.log('HIT', `DIRECT HIT AT ${coordName}! ENEMY VESSEL DAMAGED.`);
-        this.statusBanner.textContent = `💥 DIRECT HIT AT ${coordName}!`;
+
+        if (isHit) {
+          cell.state = 'hit';
+          this.radarLeftAgainstRight[row][col].state = 'hit';
+          this.stats.leftHits++;
+          hitShip.hits++;
+
+          if (willSink) {
+            hitShip.sunk = true;
+            hitShip.coords.forEach(({ r, c }) => {
+              this.boardRight[r][c].state = 'sunk';
+              this.radarLeftAgainstRight[r][c].state = 'sunk';
+            });
+            window.retroAudio.playSunk();
+            this.log('HIT', `DIRECT HIT ON ${coordName}! ENEMY ${hitShip.name} DESTROYED!`);
+            this.statusBanner.textContent = `💥 ENEMY ${hitShip.name} DESTROYED!`;
+
+            window.retroNavalFX.showSpeechBubble({
+              boardSide: 'left',
+              role: 'captain',
+              text: `Captain Vance: Target destroyed! Hostile ${hitShip.name} confirmed sunk! Outstanding shooting, crew!`,
+              meta: 'ENEMY SUNK'
+            });
+          } else {
+            window.retroAudio.playHit();
+            this.log('HIT', `DIRECT HIT AT ${coordName}! ENEMY VESSEL DAMAGED.`);
+            this.statusBanner.textContent = `💥 DIRECT HIT AT ${coordName}!`;
+
+            window.retroNavalFX.showSpeechBubble({
+              boardSide: 'left',
+              role: 'lookout',
+              text: `Lookout Martinez: Direct hit on hostile vessel at ${coordName}! Heavy black smoke detected!`,
+              meta: 'TARGET HIT'
+            });
+          }
+        } else {
+          cell.state = 'miss';
+          this.radarLeftAgainstRight[row][col].state = 'miss';
+          window.retroAudio.playMiss();
+          this.log('MISS', `SPLASH AT ${coordName}: NO TARGET DETECTED.`);
+          this.statusBanner.textContent = `WATER SPLASH AT ${coordName}.`;
+
+          window.retroNavalFX.showSpeechBubble({
+            boardSide: 'left',
+            role: 'radar',
+            text: `Radar Specialist Chen: Water geyser at ${coordName}. No hull contact confirmed.`,
+            meta: 'MISS'
+          });
+        }
+
+        this.render();
+
+        // Check Player Victory
+        if (this.fleetRight.every(s => s.sunk)) {
+          this.endGame('PLAYER');
+          return;
+        }
+
+        // AI Turn
+        this.currentTurn = 'SYSTEM_ONE';
+        this.setTurnVisuals('SYSTEM_ONE');
+        this.statusBanner.textContent = '🧠 SYSTEM ONE IS CALCULATING ARTILLERY TARGET...';
+        this.lblAiStatus.textContent = 'TARGETING...';
+        this.lblAiStatus.style.color = 'var(--accent-gold)';
+
+        await this.delay(500);
+        await this.executeSystemOneTurn();
       }
-    } else {
-      cell.state = 'miss';
-      this.radarLeftAgainstRight[row][col].state = 'miss';
-      window.retroAudio.playMiss();
-      this.log('MISS', `SPLASH AT ${coordName}: NO TARGET DETECTED.`);
-      this.statusBanner.textContent = `WATER SPLASH AT ${coordName}.`;
-    }
-
-    this.render();
-
-    // Check Player Victory
-    if (this.fleetRight.every(s => s.sunk)) {
-      this.endGame('PLAYER');
-      return;
-    }
-
-    // AI Turn
-    this.currentTurn = 'SYSTEM_ONE';
-    this.statusBanner.textContent = '🧠 SYSTEM ONE IS CALCULATING ARTILLERY TARGET...';
-    this.lblAiStatus.textContent = 'TARGETING...';
-    this.lblAiStatus.style.color = 'var(--accent-gold)';
-
-    await this.delay(600);
-    await this.executeSystemOneTurn();
+    });
   }
 
   // --- SYSTEM ONE AI EXECUTION ---
 
   async executeSystemOneTurn() {
-    // Surviving ships for left fleet
     const survivingLeft = this.fleetLeft.filter(s => !s.sunk);
 
     let decision = null;
     try {
-      decision = await window.systemOneAI.getNextShot(this.radarRightAgainstLeft, survivingLeft);
+      decision = await window.systemOneAI.getNextShot(this.radarRightAgainstLeft, survivingLeft, this.shotHistoryAgainstLeft);
     } catch (err) {
       console.error("System One AI error:", err);
     }
 
     if (!decision) {
-      // Fallback
       decision = window.normalComputerAI.getNextShot(this.radarRightAgainstLeft, survivingLeft);
     }
 
-    // Update telemetry display
     this.updateAiTelemetry(decision);
 
     const { colIdx, rowIdx } = decision;
     const coordName = coordToKey(colIdx, rowIdx);
 
-    this.stats.rightShots++;
-    window.retroAudio.playLaunch();
+    const probPct = decision.probabilities && decision.probabilities[coordName]
+      ? Math.round(decision.probabilities[coordName] * 100)
+      : Math.round((decision.confidence || 0.85) * 100);
+
+    let reactionText = '';
+    let crewRole = 'weapons';
+    if (decision.mode === 'TARGET') {
+      reactionText = `Weapons Officer: Active hit confirmed! Firing continuous salvo into ${coordName} (${probPct}% probability)!`;
+      crewRole = 'weapons';
+    } else {
+      reactionText = `Sonar Officer: Strategic scan shows open density at sector ${coordName} (${probPct}% confidence). Salvo launched!`;
+      crewRole = 'sonar';
+    }
+
+    window.retroNavalFX.showSpeechBubble({
+      boardSide: 'right',
+      role: crewRole,
+      text: reactionText,
+      meta: `${coordName} [${probPct}%]`
+    });
+
     await this.delay(350);
 
+    // Projectile Flight Arc from Right (AI) to Left (Player)
+    const fromEl = this.boardCardRight;
+    const toEl = this.gridLeftEl.querySelector(`.grid-cell[data-row="${rowIdx}"][data-col="${colIdx}"]`);
+
     const cell = this.boardLeft[rowIdx][colIdx];
-    if (cell.shipId) {
-      cell.state = 'hit';
-      this.radarRightAgainstLeft[rowIdx][colIdx].state = 'hit';
-      this.stats.rightHits++;
+    const hitShip = cell.shipId ? this.fleetLeft.find(s => s.id === cell.shipId) : null;
+    const isHit = !!hitShip;
+    const willSink = isHit && (hitShip.hits + 1 >= hitShip.length);
 
-      const hitShip = this.fleetLeft.find(s => s.id === cell.shipId);
-      hitShip.hits++;
+    this.stats.rightShots++;
+    window.retroAudio.playLaunch();
 
-      if (hitShip.hits >= hitShip.length) {
-        hitShip.sunk = true;
-        hitShip.coords.forEach(({ r, c }) => {
-          this.boardLeft[r][c].state = 'sunk';
-          this.radarRightAgainstLeft[r][c].state = 'sunk';
+    window.retroNavalFX.launchArtillery({
+      fromEl,
+      toEl,
+      isHit,
+      isSunk: willSink,
+      onImpact: async () => {
+        const shotResult = isHit ? (willSink ? 'SUNK' : 'HIT') : 'MISS';
+        this.shotHistoryAgainstLeft.push({
+          turn: this.stats.turns,
+          shooter: 'SYSTEM_ONE',
+          coord: coordName,
+          result: shotResult,
+          shipName: hitShip ? hitShip.name : null
         });
-        window.retroAudio.playSunk();
-        this.log('AI', `SYSTEM ONE STRIKES ${coordName}! YOUR ${hitShip.name} WAS SUNK!`);
-        this.statusBanner.textContent = `⚠️ YOUR ${hitShip.name} HAS BEEN SUNK BY SYSTEM ONE!`;
-      } else {
-        window.retroAudio.playHit();
-        this.log('AI', `SYSTEM ONE STRIKES ${coordName}! YOUR SHIP WAS DAMAGED.`);
-        this.statusBanner.textContent = `⚠️ INCOMING HIT AT ${coordName}!`;
+
+        if (isHit) {
+          cell.state = 'hit';
+          this.radarRightAgainstLeft[rowIdx][colIdx].state = 'hit';
+          this.stats.rightHits++;
+          hitShip.hits++;
+
+          if (willSink) {
+            hitShip.sunk = true;
+            hitShip.coords.forEach(({ r, c }) => {
+              this.boardLeft[r][c].state = 'sunk';
+              this.radarRightAgainstLeft[r][c].state = 'sunk';
+            });
+            window.retroAudio.playSunk();
+            this.log('AI', `SYSTEM ONE DESTROYED YOUR ${hitShip.name} AT ${coordName}!`);
+            this.statusBanner.textContent = `⚠️ YOUR ${hitShip.name} SUNK BY SYSTEM ONE!`;
+
+            window.retroNavalFX.showSpeechBubble({
+              boardSide: 'left',
+              role: 'damage',
+              text: `Damage Control Chief Miller: Hull breach uncontrollable! All hands abandon our ${hitShip.name}!`,
+              meta: 'SHIP LOST'
+            });
+          } else {
+            window.retroAudio.playHit();
+            this.log('AI', `SYSTEM ONE STRIKES ${coordName}! VESSEL DAMAGED.`);
+            this.statusBanner.textContent = `⚠️ INCOMING HIT AT ${coordName}!`;
+
+            window.retroNavalFX.showSpeechBubble({
+              boardSide: 'left',
+              role: 'damage',
+              text: `Damage Control Chief Miller: BRACE FOR IMPACT! Bulkhead ruptured on our ${hitShip.name} at ${coordName}!`,
+              meta: 'HULL BREACH'
+            });
+          }
+        } else {
+          cell.state = 'miss';
+          this.radarRightAgainstLeft[rowIdx][colIdx].state = 'miss';
+          window.retroAudio.playMiss();
+          this.log('AI', `SYSTEM ONE FIRED AT ${coordName}: MISS.`);
+          this.statusBanner.textContent = `SYSTEM ONE MISSED AT ${coordName}. YOUR TURN!`;
+
+          window.retroNavalFX.showSpeechBubble({
+            boardSide: 'left',
+            role: 'lookout',
+            text: `Lookout Martinez: Splash at ${coordName}! Enemy artillery missed wide!`,
+            meta: 'SPLASH'
+          });
+        }
+
+        // Check AI Victory
+        if (this.fleetLeft.every(s => s.sunk)) {
+          this.render();
+          this.endGame('SYSTEM_ONE');
+          return;
+        }
+
+        if (this.mode === '1P') {
+          this.currentTurn = 'PLAYER';
+          this.setTurnVisuals('PLAYER');
+          this.lblAiStatus.textContent = 'IDLE';
+          this.lblAiStatus.style.color = 'var(--accent-green)';
+          this.statusBanner.textContent = 'YOUR TURN: SELECT ENEMY RADAR COORDINATE TO FIRE!';
+        }
+
+        this.render();
       }
-    } else {
-      cell.state = 'miss';
-      this.radarRightAgainstLeft[rowIdx][colIdx].state = 'miss';
-      window.retroAudio.playMiss();
-      this.log('AI', `SYSTEM ONE FIRED AT ${coordName}: MISS.`);
-      this.statusBanner.textContent = `SYSTEM ONE MISSED AT ${coordName}. YOUR TURN!`;
-    }
-
-    this.render();
-
-    // Check AI Victory
-    if (this.fleetLeft.every(s => s.sunk)) {
-      this.endGame('SYSTEM_ONE');
-      return;
-    }
-
-    if (this.mode === '1P') {
-      this.currentTurn = 'PLAYER';
-      this.lblAiStatus.textContent = 'IDLE';
-      this.lblAiStatus.style.color = 'var(--accent-green)';
-    }
+    });
   }
 
   // --- SPECTATOR DUEL SIMULATION ---
@@ -526,12 +883,13 @@ class BattleshipGame {
 
     if (this.currentTurn === 'SYSTEM_ONE') {
       // System One attacks Normal CPU (Board Right)
+      this.setTurnVisuals('SYSTEM_ONE');
       this.statusBanner.textContent = '🧠 SYSTEM ONE FIRING AT NORMAL CPU...';
       const survivingRight = this.fleetRight.filter(s => !s.sunk);
 
       let decision = null;
       try {
-        decision = await window.systemOneAI.getNextShot(this.radarLeftAgainstRight, survivingRight);
+        decision = await window.systemOneAI.getNextShot(this.radarLeftAgainstRight, survivingRight, this.shotHistoryAgainstRight);
       } catch (e) {
         console.error(e);
       }
@@ -543,38 +901,98 @@ class BattleshipGame {
 
       const { colIdx, rowIdx } = decision;
       const coordName = coordToKey(colIdx, rowIdx);
-      this.stats.leftShots++;
-      window.retroAudio.playLaunch();
-      await this.delay(200);
+
+      const probPct = decision.probabilities && decision.probabilities[coordName]
+        ? Math.round(decision.probabilities[coordName] * 100)
+        : Math.round((decision.confidence || 0.8) * 100);
+
+      const crewRole = decision.mode === 'TARGET' ? 'weapons' : 'sonar';
+      const actionText = decision.mode === 'TARGET'
+        ? `Weapons Officer: Tracking active hit! Directing battery salvo to ${coordName} (${probPct}% probability)!`
+        : `Sonar Officer: Recon sweep identifies open quadrant at ${coordName} (${probPct}% confidence). Salvo away!`;
+
+      window.retroNavalFX.showSpeechBubble({
+        boardSide: 'left',
+        role: crewRole,
+        text: actionText,
+        meta: `FIRE -> ${coordName}`
+      });
 
       const cell = this.boardRight[rowIdx][colIdx];
-      if (cell.shipId) {
-        cell.state = 'hit';
-        this.radarLeftAgainstRight[rowIdx][colIdx].state = 'hit';
-        this.stats.leftHits++;
+      const hitShip = cell.shipId ? this.fleetRight.find(s => s.id === cell.shipId) : null;
+      const isHit = !!hitShip;
+      const willSink = isHit && (hitShip.hits + 1 >= hitShip.length);
 
-        const hitShip = this.fleetRight.find(s => s.id === cell.shipId);
-        hitShip.hits++;
-        if (hitShip.hits >= hitShip.length) {
-          hitShip.sunk = true;
-          hitShip.coords.forEach(({ r, c }) => {
-            this.boardRight[r][c].state = 'sunk';
-            this.radarLeftAgainstRight[r][c].state = 'sunk';
-          });
-          window.retroAudio.playSunk();
-          this.log('AI', `SYSTEM ONE DESTROYED CPU'S ${hitShip.name} AT ${coordName}!`);
-        } else {
-          window.retroAudio.playHit();
-          this.log('AI', `SYSTEM ONE HIT CPU VESSEL AT ${coordName}.`);
-        }
-      } else {
-        cell.state = 'miss';
-        this.radarLeftAgainstRight[rowIdx][colIdx].state = 'miss';
-        window.retroAudio.playMiss();
-        this.log('AI', `SYSTEM ONE MISS AT ${coordName}.`);
-      }
+      const fromEl = this.boardCardLeft;
+      const toEl = this.gridRightEl.querySelector(`.grid-cell[data-row="${rowIdx}"][data-col="${colIdx}"]`);
 
-      this.render();
+      this.stats.leftShots++;
+      window.retroAudio.playLaunch();
+
+      await new Promise(resolve => {
+        window.retroNavalFX.launchArtillery({
+          fromEl,
+          toEl,
+          isHit,
+          isSunk: willSink,
+          onImpact: () => {
+            const shotResult = isHit ? (willSink ? 'SUNK' : 'HIT') : 'MISS';
+            this.shotHistoryAgainstRight.push({
+              turn: this.stats.turns,
+              shooter: 'SYSTEM_ONE',
+              coord: coordName,
+              result: shotResult,
+              shipName: hitShip ? hitShip.name : null
+            });
+
+            if (isHit) {
+              cell.state = 'hit';
+              this.radarLeftAgainstRight[rowIdx][colIdx].state = 'hit';
+              this.stats.leftHits++;
+              hitShip.hits++;
+
+              if (willSink) {
+                hitShip.sunk = true;
+                hitShip.coords.forEach(({ r, c }) => {
+                  this.boardRight[r][c].state = 'sunk';
+                  this.radarLeftAgainstRight[r][c].state = 'sunk';
+                });
+                window.retroAudio.playSunk();
+                this.log('AI', `SYSTEM ONE DESTROYED CPU'S ${hitShip.name} AT ${coordName}!`);
+                window.retroNavalFX.showSpeechBubble({
+                  boardSide: 'right',
+                  role: 'damage',
+                  text: `Damage Control: Critical structural failure! Our ${hitShip.name} has been destroyed!`,
+                  meta: 'CPU SUNK'
+                });
+              } else {
+                window.retroAudio.playHit();
+                this.log('AI', `SYSTEM ONE HIT CPU VESSEL AT ${coordName}.`);
+                window.retroNavalFX.showSpeechBubble({
+                  boardSide: 'left',
+                  role: 'lookout',
+                  text: `Lookout Martinez: Shell detonation on CPU hull at ${coordName}! Target burning!`,
+                  meta: 'HIT'
+                });
+              }
+            } else {
+              cell.state = 'miss';
+              this.radarLeftAgainstRight[rowIdx][colIdx].state = 'miss';
+              window.retroAudio.playMiss();
+              this.log('AI', `SYSTEM ONE MISS AT ${coordName}.`);
+              window.retroNavalFX.showSpeechBubble({
+                boardSide: 'left',
+                role: 'radar',
+                text: `Radar Specialist Chen: Water geyser at ${coordName}. No contact.`,
+                meta: 'MISS'
+              });
+            }
+
+            this.render();
+            resolve();
+          }
+        });
+      });
 
       if (this.fleetRight.every(s => s.sunk)) {
         this.endGame('SYSTEM_ONE');
@@ -585,44 +1003,96 @@ class BattleshipGame {
 
     } else {
       // Normal CPU attacks System One (Board Left)
+      this.setTurnVisuals('CPU');
       this.statusBanner.textContent = '🤖 NORMAL CPU FIRING AT SYSTEM ONE...';
       const survivingLeft = this.fleetLeft.filter(s => !s.sunk);
       const decision = window.normalComputerAI.getNextShot(this.radarRightAgainstLeft, survivingLeft);
 
       const { colIdx, rowIdx } = decision;
       const coordName = coordToKey(colIdx, rowIdx);
-      this.stats.rightShots++;
-      window.retroAudio.playLaunch();
-      await this.delay(200);
+
+      window.retroNavalFX.showSpeechBubble({
+        boardSide: 'right',
+        role: 'weapons',
+        text: `Weapons Officer: Executing Hunt-and-Target battery salvo towards sector ${coordName}.`,
+        meta: `CPU -> ${coordName}`
+      });
 
       const cell = this.boardLeft[rowIdx][colIdx];
-      if (cell.shipId) {
-        cell.state = 'hit';
-        this.radarRightAgainstLeft[rowIdx][colIdx].state = 'hit';
-        this.stats.rightHits++;
+      const hitShip = cell.shipId ? this.fleetLeft.find(s => s.id === cell.shipId) : null;
+      const isHit = !!hitShip;
+      const willSink = isHit && (hitShip.hits + 1 >= hitShip.length);
 
-        const hitShip = this.fleetLeft.find(s => s.id === cell.shipId);
-        hitShip.hits++;
-        if (hitShip.hits >= hitShip.length) {
-          hitShip.sunk = true;
-          hitShip.coords.forEach(({ r, c }) => {
-            this.boardLeft[r][c].state = 'sunk';
-            this.radarRightAgainstLeft[r][c].state = 'sunk';
-          });
-          window.retroAudio.playSunk();
-          this.log('CPU', `CPU DESTROYED SYSTEM ONE'S ${hitShip.name} AT ${coordName}!`);
-        } else {
-          window.retroAudio.playHit();
-          this.log('CPU', `CPU HIT SYSTEM ONE VESSEL AT ${coordName}.`);
-        }
-      } else {
-        cell.state = 'miss';
-        this.radarRightAgainstLeft[rowIdx][colIdx].state = 'miss';
-        window.retroAudio.playMiss();
-        this.log('CPU', `CPU MISS AT ${coordName}.`);
-      }
+      const fromEl = this.boardCardRight;
+      const toEl = this.gridLeftEl.querySelector(`.grid-cell[data-row="${rowIdx}"][data-col="${colIdx}"]`);
 
-      this.render();
+      this.stats.rightShots++;
+      window.retroAudio.playLaunch();
+
+      await new Promise(resolve => {
+        window.retroNavalFX.launchArtillery({
+          fromEl,
+          toEl,
+          isHit,
+          isSunk: willSink,
+          onImpact: () => {
+            const shotResult = isHit ? (willSink ? 'SUNK' : 'HIT') : 'MISS';
+            this.shotHistoryAgainstLeft.push({
+              turn: this.stats.turns,
+              shooter: 'CPU',
+              coord: coordName,
+              result: shotResult,
+              shipName: hitShip ? hitShip.name : null
+            });
+
+            if (isHit) {
+              cell.state = 'hit';
+              this.radarRightAgainstLeft[rowIdx][colIdx].state = 'hit';
+              this.stats.rightHits++;
+              hitShip.hits++;
+
+              if (willSink) {
+                hitShip.sunk = true;
+                hitShip.coords.forEach(({ r, c }) => {
+                  this.boardLeft[r][c].state = 'sunk';
+                  this.radarRightAgainstLeft[r][c].state = 'sunk';
+                });
+                window.retroAudio.playSunk();
+                this.log('CPU', `CPU DESTROYED SYSTEM ONE'S ${hitShip.name} AT ${coordName}!`);
+                window.retroNavalFX.showSpeechBubble({
+                  boardSide: 'left',
+                  role: 'damage',
+                  text: `Damage Control Chief Miller: All bulkheads breached! System One's ${hitShip.name} is lost!`,
+                  meta: 'SHIP LOST'
+                });
+              } else {
+                window.retroAudio.playHit();
+                this.log('CPU', `CPU HIT SYSTEM ONE VESSEL AT ${coordName}.`);
+                window.retroNavalFX.showSpeechBubble({
+                  boardSide: 'left',
+                  role: 'damage',
+                  text: `Damage Control Chief Miller: Incoming shell impact at ${coordName}! Shoring up bulkheads!`,
+                  meta: 'DAMAGE'
+                });
+              }
+            } else {
+              cell.state = 'miss';
+              this.radarRightAgainstLeft[rowIdx][colIdx].state = 'miss';
+              window.retroAudio.playMiss();
+              this.log('CPU', `CPU MISS AT ${coordName}.`);
+              window.retroNavalFX.showSpeechBubble({
+                boardSide: 'left',
+                role: 'lookout',
+                text: `Lookout Martinez: Water geyser at ${coordName}! Enemy missed our warships!`,
+                meta: 'SPLASH'
+              });
+            }
+
+            this.render();
+            resolve();
+          }
+        });
+      });
 
       if (this.fleetLeft.every(s => s.sunk)) {
         this.endGame('CPU');
@@ -630,6 +1100,30 @@ class BattleshipGame {
       }
 
       this.currentTurn = 'SYSTEM_ONE';
+    }
+  }
+
+  // --- TURN VISUAL COLOR FEEDBACK ---
+
+  setTurnVisuals(turn) {
+    this.boardCardLeft.classList.remove('turn-attacker', 'turn-defender');
+    this.boardCardRight.classList.remove('turn-attacker', 'turn-defender');
+
+    if (turn === 'PLAYER') {
+      this.boardCardLeft.classList.add('turn-attacker');
+      this.boardCardRight.classList.add('turn-defender');
+    } else if (turn === 'SYSTEM_ONE') {
+      if (this.mode === '1P') {
+        this.boardCardRight.classList.add('turn-attacker');
+        this.boardCardLeft.classList.add('turn-defender');
+      } else {
+        // In spectator, Left is System One
+        this.boardCardLeft.classList.add('turn-attacker');
+        this.boardCardRight.classList.add('turn-defender');
+      }
+    } else if (turn === 'CPU') {
+      this.boardCardRight.classList.add('turn-attacker');
+      this.boardCardLeft.classList.add('turn-defender');
     }
   }
 
@@ -651,7 +1145,6 @@ class BattleshipGame {
       this.valModelName.textContent = window.systemOneAI.modelName;
     }
 
-    // Probability Meters
     const probs = decision.probabilities || {};
     const keys = Object.keys(probs);
 
@@ -678,7 +1171,6 @@ class BattleshipGame {
       this.probabilityMeters.innerHTML = metersHtml;
     }
 
-    // ASCII Radar View
     if (decision.asciiRadar) {
       this.asciiRadarTerminal.textContent = decision.asciiRadar;
     }
@@ -690,21 +1182,143 @@ class BattleshipGame {
     this.renderFleetRack(this.fleetLeft, this.fleetRackLeft);
     this.renderFleetRack(this.fleetRight, this.fleetRackRight);
 
-    // Left Board: In 1P, show player's ships. In Spectator, show AI's ships!
-    const showShipsLeft = true;
-    this.renderGrid(this.boardLeft, this.gridLeftEl, showShipsLeft, false);
+    // Grid rendering
+    this.renderGrid(this.boardLeft, this.gridLeftEl, false);
+    const isInteractive = this.mode === '1P' && this.phase === 'BATTLE' && this.currentTurn === 'PLAYER';
+    this.renderGrid(this.boardRight, this.gridRightEl, isInteractive);
 
-    // Right Board: In 1P mode, FOG OF WAR (ships are hidden!). In Spectator, CPU ships ARE visible!
-    const showShipsRight = this.mode === 'SPECTATOR';
-    const isClickable = this.mode === '1P' && this.phase === 'BATTLE' && this.currentTurn === 'PLAYER';
-    this.renderGrid(this.boardRight, this.gridRightEl, showShipsRight, isClickable);
-
-    // Clickable classes
-    if (isClickable) {
+    if (isInteractive) {
       this.gridRightEl.classList.add('clickable');
     } else {
       this.gridRightEl.classList.remove('clickable');
     }
+
+    // Render High-Fidelity Ship Overlays!
+    // Left board ships are visible
+    this.renderShipsOverlay(this.fleetLeft, this.shipsOverlayLeft, true, this.phase === 'DEPLOYMENT');
+
+    // Right board ships: HIDDEN in 1P mode (Fog of War) until game over! VISIBLE in Spectator mode!
+    const showRightShips = this.mode === 'SPECTATOR' || this.phase === 'GAMEOVER';
+    this.renderShipsOverlay(this.fleetRight, this.shipsOverlayRight, showRightShips, false);
+
+    // Render drydock
+    if (this.phase === 'DEPLOYMENT') {
+      this.renderDock();
+    }
+
+    // Synchronize organic smoke & fire emitters for damaged and sunken warships
+    this.syncSmokeEmitters();
+  }
+
+  syncSmokeEmitters() {
+    window.retroNavalFX.clearSmokeEmitters();
+
+    for (let r = 0; r < 10; r++) {
+      for (let c = 0; c < 10; c++) {
+        const stateL = this.boardLeft[r][c].state;
+        if (stateL === 'hit' || stateL === 'sunk') {
+          const elL = this.gridLeftEl.querySelector(`.grid-cell[data-row="${r}"][data-col="${c}"]`);
+          if (elL) window.retroNavalFX.registerSmokeEmitter(`L_${r}_${c}`, elL, stateL === 'sunk');
+        }
+
+        const stateR = this.boardRight[r][c].state;
+        if (stateR === 'hit' || stateR === 'sunk') {
+          const elR = this.gridRightEl.querySelector(`.grid-cell[data-row="${r}"][data-col="${c}"]`);
+          if (elR) window.retroNavalFX.registerSmokeEmitter(`R_${r}_${c}`, elR, stateR === 'sunk');
+        }
+      }
+    }
+  }
+
+  renderDock() {
+    this.dockShipsRow.innerHTML = '';
+    const deployedIds = new Set(this.fleetLeft.map(s => s.id));
+
+    SHIPS_CONFIG.forEach(ship => {
+      const isDeployed = deployedIds.has(ship.id);
+      const card = document.createElement('div');
+      card.className = `dock-ship-card ${isDeployed ? 'deployed' : ''}`;
+      card.dataset.shipId = ship.id;
+
+      let pips = '';
+      for (let i = 0; i < ship.length; i++) pips += '●';
+
+      card.innerHTML = `
+        <div class="dock-ship-info">
+          <span>${ship.name}</span>
+          <span style="color: var(--accent-cyan);">${pips}</span>
+        </div>
+        <div class="dock-ship-preview">
+          ${window.generateShipSVG(ship.id, ship.length, false)}
+        </div>
+      `;
+
+      if (!isDeployed) {
+        card.addEventListener('pointerdown', (e) => {
+          this.startDragFromDock(e, ship.id, ship.length);
+        });
+      }
+
+      this.dockShipsRow.appendChild(card);
+    });
+  }
+
+  startDragFromDock(e, shipId, length) {
+    this.dragState = {
+      isDragging: true,
+      shipId,
+      length,
+      isVertical: this.placementOrientation,
+      source: 'dock',
+      originR: null,
+      originC: null,
+      hoverR: null,
+      hoverC: null,
+      isValid: false
+    };
+    window.retroAudio.playClick();
+  }
+
+  renderShipsOverlay(fleet, overlayEl, isVisible, allowDrag) {
+    overlayEl.innerHTML = '';
+    if (!isVisible) return;
+
+    fleet.forEach(ship => {
+      const container = document.createElement('div');
+      container.className = `placed-ship-container ${ship.sunk ? 'sunk' : ''} ${allowDrag ? 'draggable' : 'locked'}`;
+
+      const left = GRID_OFFSET + ship.startC * (CELL_SIZE + CELL_GAP);
+      const top = GRID_OFFSET + ship.startR * (CELL_SIZE + CELL_GAP);
+
+      container.style.left = `${left}px`;
+      container.style.top = `${top}px`;
+      container.innerHTML = window.generateShipSVG(ship.id, ship.length, ship.isVertical);
+
+      if (allowDrag) {
+        container.addEventListener('pointerdown', (e) => {
+          e.stopPropagation();
+          this.startDragFromGrid(e, ship);
+        });
+      }
+
+      overlayEl.appendChild(container);
+    });
+  }
+
+  startDragFromGrid(e, ship) {
+    this.dragState = {
+      isDragging: true,
+      shipId: ship.id,
+      length: ship.length,
+      isVertical: ship.isVertical,
+      source: 'grid',
+      originR: ship.startR,
+      originC: ship.startC,
+      hoverR: ship.startR,
+      hoverC: ship.startC,
+      isValid: true
+    };
+    window.retroAudio.playClick();
   }
 
   renderFleetRack(fleet, rackEl) {
@@ -724,15 +1338,13 @@ class BattleshipGame {
     rackEl.innerHTML = html;
   }
 
-  renderGrid(board, gridEl, showShips, isInteractive) {
+  renderGrid(board, gridEl, isInteractive) {
     gridEl.innerHTML = '';
 
-    // Top-left blank header cell
     const emptyCorner = document.createElement('div');
     emptyCorner.className = 'grid-header-cell';
     gridEl.appendChild(emptyCorner);
 
-    // Column headers (A-J)
     for (let c = 0; c < 10; c++) {
       const colHeader = document.createElement('div');
       colHeader.className = 'grid-header-cell';
@@ -740,9 +1352,7 @@ class BattleshipGame {
       gridEl.appendChild(colHeader);
     }
 
-    // Grid rows
     for (let r = 0; r < 10; r++) {
-      // Row header (1-10)
       const rowHeader = document.createElement('div');
       rowHeader.className = 'grid-header-cell';
       rowHeader.textContent = r + 1;
@@ -752,12 +1362,11 @@ class BattleshipGame {
         const cell = board[r][c];
         const cellEl = document.createElement('div');
         cellEl.className = 'grid-cell';
+        cellEl.dataset.row = r;
+        cellEl.dataset.col = c;
 
         if (cell.state === 'empty') {
           cellEl.classList.add('unexplored');
-          if (showShips && cell.shipId) {
-            cellEl.classList.add('ship');
-          }
         } else if (cell.state === 'miss') {
           cellEl.classList.add('miss');
         } else if (cell.state === 'hit') {
@@ -782,40 +1391,57 @@ class BattleshipGame {
   endGame(winner) {
     this.phase = 'GAMEOVER';
     this.pauseSpectatorSimulation();
+    this.setTurnVisuals('NONE');
 
     let titleText = '';
-    let isWin = false;
-
     if (this.mode === '1P') {
       if (winner === 'PLAYER') {
         titleText = '🏆 VICTORY! ENEMY AI FLEET DESTROYED!';
-        isWin = true;
         window.retroAudio.playVictory();
+        window.retroNavalFX.showSpeechBubble({
+          boardSide: 'left',
+          speaker: 'PLAYER',
+          text: 'Victory achieved! The enemy fleet has sunk beneath the waves!',
+          duration: 6000
+        });
       } else {
         titleText = '☠ DEFEAT! SYSTEM ONE ANNIHILATED YOUR FLEET!';
         window.retroAudio.playDefeat();
+        window.retroNavalFX.showSpeechBubble({
+          boardSide: 'right',
+          speaker: 'AI',
+          text: 'Checkmate, Admiral. The deep decision model reigned supreme.',
+          duration: 6000
+        });
       }
     } else {
-      // Spectator
       if (winner === 'SYSTEM_ONE') {
-        titleText = '🧠 SYSTEM ONE AI WINS THE NAVAL DUEL!';
-        isWin = true;
+        titleText = '🧠 SYSTEM ONE WINS THE NAVAL DUEL!';
         window.retroAudio.playVictory();
+        window.retroNavalFX.showSpeechBubble({
+          boardSide: 'left',
+          speaker: 'AI',
+          text: 'Simulation concluded. Superior tactical probability mapping defeated CPU logic.',
+          duration: 6000
+        });
       } else {
         titleText = '🤖 NORMAL CPU WINS THE NAVAL DUEL!';
         window.retroAudio.playVictory();
+        window.retroNavalFX.showSpeechBubble({
+          boardSide: 'right',
+          speaker: 'CPU',
+          text: 'Algorithmic parity strategy emerged victorious in this duel.',
+          duration: 6000
+        });
       }
     }
 
     this.statusBanner.textContent = titleText;
     this.log('SYS', `=== MATCH OVER: ${titleText} ===`);
 
-    // Show full reveal of both boards at match end!
-    const showShipsRight = true;
-    this.renderGrid(this.boardRight, this.gridRightEl, showShipsRight, false);
+    // Reveal right board ships upon game over
+    this.render();
   }
-
-  // --- LOGGING ---
 
   log(category, message) {
     const time = new Date().toTimeString().split(' ')[0].slice(3, 8);
@@ -830,7 +1456,6 @@ class BattleshipGame {
   }
 }
 
-// Instantiate game on load
 window.addEventListener('DOMContentLoaded', () => {
   window.battleshipGame = new BattleshipGame();
 });
