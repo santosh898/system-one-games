@@ -150,16 +150,6 @@
       justify-content: space-between;
       align-items: center;
     }
-
-    .slot-future {
-      border-style: dashed;
-      opacity: 0.8;
-    }
-
-    .slot-future:hover {
-      border-color: var(--accent-gold);
-      box-shadow: 0 8px 24px rgba(255, 204, 0, 0.2);
-    }
   </style>
 </head>
 <body class="crt-active">
@@ -219,18 +209,17 @@
         </div>
         <div class="cabinet-body">
           <p class="cabinet-desc">
-            Full naval warfare simulation featuring custom high-fidelity SVG warships, drag-and-drop drydock deployment, parabolic artillery rocket flight with smoke trails, and authentic naval crew speech reactions.
+            16-bit naval combat. Drag-and-drop fleet deployment, artillery flight arcs with smoke trails, crew reaction dialogues, and System One decision tracking.
           </p>
           <div class="cabinet-tags">
             <span class="cabinet-tag">1-PLAYER (VS AI)</span>
             <span class="cabinet-tag">SPECTATOR (AI VS CPU)</span>
             <span class="cabinet-tag">CREW REACTIONS</span>
-            <span class="cabinet-tag">SMOKE & FIRE FX</span>
           </div>
         </div>
         <div class="cabinet-footer">
           <span style="font-size: 8px; color: var(--accent-gold);">10x10 NAVAL GRID</span>
-          <a href="/battleship" class="retro-btn btn-primary">▶ LAUNCH BATTLESHIP</a>
+          <a href="/battleship/" class="retro-btn btn-primary">▶ PLAY BATTLESHIP</a>
         </div>
       </article>
 
@@ -245,42 +234,17 @@
         </div>
         <div class="cabinet-body">
           <p class="cabinet-desc">
-            Classic 16-bit arcade snake powered by multi-grid raycasting navigation (direction + step distance). System One evaluates open runway and lines of sight to hunt multiple fruits simultaneously while avoiding self-collision.
+            Classic arcade snake powered by multi-grid raycasting navigation. System One evaluates lines of sight to hunt food while avoiding collisions.
           </p>
           <div class="cabinet-tags">
             <span class="cabinet-tag">AI AUTO (FAST 85MS)</span>
             <span class="cabinet-tag">MANUAL (WASD)</span>
-            <span class="cabinet-tag">MULTI-TILE NAV</span>
-            <span class="cabinet-tag">DUAL FRUITS</span>
+            <span class="cabinet-tag">MULTI-GRID SIZES</span>
           </div>
         </div>
         <div class="cabinet-footer">
           <span style="font-size: 8px; color: var(--accent-green);">10x10 / 12x12 / 16x16</span>
-          <a href="/snake" class="retro-btn btn-primary">▶ LAUNCH SNAKE</a>
-        </div>
-      </article>
-
-      <!-- EXTENSIBLE SLOT -->
-      <article class="arcade-cabinet slot-future">
-        <div class="cabinet-header">
-          <div class="cabinet-icon" style="filter: none; opacity: 0.6;">➕</div>
-          <div>
-            <h3 class="cabinet-title" style="color: var(--accent-gold);">ADD NEW GAME</h3>
-            <div class="cabinet-subtitle">EXTENSIBLE DECISION ARCHITECTURE</div>
-          </div>
-        </div>
-        <div class="cabinet-body">
-          <p class="cabinet-desc">
-            Build your own decision engine games using the shared <code>/shared/systemone.js</code> client. Supports Connect Four, Pac-Man, Maze Solvers, Checkers, and custom spatial decision environments.
-          </p>
-          <div class="cabinet-tags">
-            <span class="cabinet-tag" style="color: var(--accent-gold); border-color: #554400;">MODULAR DRY CORE</span>
-            <span class="cabinet-tag" style="color: var(--accent-cyan); border-color: #004455;">SHARED TELEMETRY</span>
-          </div>
-        </div>
-        <div class="cabinet-footer">
-          <span style="font-size: 8px; color: var(--text-dim);">SYSTEM ONE COMPATIBLE</span>
-          <button class="retro-btn btn-gold" onclick="window.openModelModal()">⚙️ CONFIGURE API</button>
+          <a href="/snake/" class="retro-btn btn-primary">▶ PLAY SNAKE</a>
         </div>
       </article>
 
