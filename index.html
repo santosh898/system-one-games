@@ -164,8 +164,7 @@
       </div>
     </div>
     <div class="header-badges">
-      <span class="badge" id="valModelName">strands-decider-2B-qwen3.5-v1-2610</span>
-      <button class="retro-btn btn-sub" id="btnModelConfig">⚙️ MODEL CONFIG</button>
+      <span class="badge" id="valModelName" style="cursor: pointer;" title="Configure model endpoint">strands-decider-2B-qwen3.5-v1-2610</span>
       <button class="retro-btn btn-sub" id="btnCrtToggle">📺 CRT: ON</button>
       <button class="retro-btn btn-sub" id="btnSoundToggle">🔊 SOUND ON</button>
     </div>
@@ -174,24 +173,13 @@
   <!-- HUB CONTAINER -->
   <main class="hub-container">
 
-    <!-- HERO STATUS BANNER -->
+    <!-- HERO HEADER -->
     <section class="hero-banner">
       <div class="hero-text">
         <h2>SELECT AN ARCADE SIMULATION</h2>
         <p>
-          Experience classic retro arcade games powered by the <strong>TypeSafe AI System One</strong> decision model.
-          Each game formats real-time spatial representations into structured <code>choice</code> evaluations, executing high-speed, non-autoregressive tactical moves.
+          Classic 16-bit arcade games powered by the <strong>TypeSafe AI System One</strong> decision model.
         </p>
-      </div>
-      <div class="hero-status-card">
-        <div style="font-size: 7px; color: var(--text-dim); display: flex; justify-content: space-between;">
-          <span>MODEL SOURCE STATUS</span>
-          <span style="color: var(--accent-green);">● ACTIVE</span>
-        </div>
-        <div style="font-family: var(--font-terminal); font-size: 15px; color: var(--accent-cyan); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-          http://127.0.0.1:8000/v1/systemone
-        </div>
-        <button class="retro-btn btn-sub" style="margin-top: 4px;" onclick="window.openModelModal()">CHANGE SOURCE URL</button>
       </div>
     </section>
 
