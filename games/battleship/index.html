@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>System One - 16-Bit Retro Battleship</title>
+  <link rel="stylesheet" href="/shared/retro.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="crt-active">
+
+  <!-- FULLSCREEN FX CANVAS OVERLAY (MISSILES, SMOKE TRAILS, EXPLOSIONS) -->
+  <canvas id="fxCanvas" class="fx-overlay-canvas"></canvas>
+
+  <!-- HEADER WITH HUB NAVIGATION -->
+  <header class="arcade-header">
+    <div class="logo-group">
+      <div class="logo-icon">⚓</div>
+      <div>
+        <h1 class="arcade-title">SYSTEM ONE // RETRO BATTLESHIP</h1>
+        <div class="arcade-subtitle">16-BIT NAVAL COMBAT & TACTICAL DECISION ENGINE</div>
+      </div>
+    </div>
+
+    <!-- ARCADE NAVIGATION LINKS -->
+    <nav class="arcade-nav">
+      <a href="/" class="arcade-nav-link">🏠 ARCADE HUB</a>
+      <a href="/battleship" class="arcade-nav-link active">⚓ BATTLESHIP</a>
+      <a href="/snake" class="arcade-nav-link">🐍 SNAKE</a>
+    </nav>
+
+    <div class="header-badges">
+      <span class="badge" id="valModelName">strands-decider-2B-qwen3.5-v1-2610</span>
+      <button class="retro-btn btn-sub" id="btnCrtToggle">📺 CRT: ON</button>
+      <button class="retro-btn btn-sub" id="btnSoundToggle">🔊 SOUND ON</button>
+    </div>
+  </header>
+
+  <!-- MODE SELECTOR & STATUS BANNER -->
+  <div class="mode-selector-bar">
+    <div class="mode-pills">
+      <button class="mode-pill active" id="btnMode1P">🎮 ONE PLAYER (VS AI)</button>
+      <button class="mode-pill" id="btnModeSpectator">👁️ SPECTATOR (AI VS CPU)</button>
+    </div>
+    <div class="status-banner" id="statusBanner">DEPLOY FLEET: POSITION YOUR WARSHIPS</div>
+  </div>
+
+  <!-- MAIN ARCADE ARENA -->
+  <main class="main-arcade">
+
+    <!-- LEFT COLUMN: DUAL BATTLEFIELDS & CONTROLS -->
+    <div class="battlefield-wrapper">
+      
+      <div class="boards-container">
+        
+        <!-- BOARD 1 (LEFT) -->
+        <div class="board-card" id="boardCardLeft">
+          
+          <!-- SPEECH BUBBLE OVER LEFT BOARD -->
+          <div class="speech-bubble-anchor">
+            <div class="speech-bubble-box" id="speechBubbleLEFT"></div>
+          </div>
+
+          <div class="board-header">
+            <span class="board-title" id="titleBoardLeft">
+              🛡️ YOUR FLEET
+            </span>
+            <span class="board-tag" id="tagBoardLeft">PLAYER DEFENSE</span>
+          </div>
+
+          <!-- FLEET RACK 1 -->
+          <div class="fleet-rack" id="fleetRackLeft"></div>
+
+          <!-- GRID 1 -->
+          <div class="grid-frame" id="frameLeft">
+            <div class="naval-grid" id="gridLeft"></div>
+            <!-- Ship SVG Layer Overlay -->
+            <div class="ships-overlay-layer" id="shipsOverlayLeft"></div>
+          </div>
+        </div>
+
+        <!-- BOARD 2 (RIGHT) -->
+        <div class="board-card" id="boardCardRight">
+
+          <!-- SPEECH BUBBLE OVER RIGHT BOARD (SYSTEM ONE / CPU) -->
+          <div class="speech-bubble-anchor">
+            <div class="speech-bubble-box" id="speechBubbleRIGHT"></div>
+          </div>
+
+          <div class="board-header">
+            <span class="board-title" id="titleBoardRight">
+              🎯 SYSTEM ONE RADAR
+            </span>
+            <span class="board-tag" id="tagBoardRight">FOG OF WAR</span>
+          </div>
+
+          <!-- FLEET RACK 2 -->
+          <div class="fleet-rack" id="fleetRackRight"></div>
+
+          <!-- GRID 2 -->
+          <div class="grid-frame" id="frameRight">
+            <div class="naval-grid clickable" id="gridRight"></div>
+            <!-- Ship SVG Layer Overlay (Visible in Spectator Mode & at Game Over) -->
+            <div class="ships-overlay-layer" id="shipsOverlayRight"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 1-PLAYER DRAG-AND-DROP SHIPYARD DOCK (DEPLOYMENT PHASE) -->
+      <div class="shipyard-dock-container" id="shipyardDockContainer">
+        <div class="dock-header">
+          <span>🏗️ NAVAL DRYDOCK (DRAG & DROP SHIPS TO GRID OR CLICK TO ROTATE)</span>
+          <span style="color: var(--accent-gold); font-size: 8px;">KEYBOARD: PRESS 'R' TO ROTATE</span>
+        </div>
+        <div class="dock-ships-row" id="dockShipsRow"></div>
+      </div>
+
+      <!-- 1-PLAYER DEPLOYMENT ACTION BAR -->
+      <div class="placement-bar" id="deploymentBar">
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <button class="retro-btn btn-primary" id="btnAutoDeploy">🎲 RANDOMIZE FLEET</button>
+          <button class="retro-btn" id="btnClearFleet">🧹 CLEAR GRID</button>
+          <button class="retro-btn" id="btnRotateShip">🔄 ROTATE (R)</button>
+          <span style="font-size: 8px; color: var(--text-dim);" id="placementHint">Orientation: HORIZONTAL</span>
+        </div>
+        <button class="retro-btn btn-gold" id="btnStartBattle">⚔️ ENGAGE BATTLE!</button>
+      </div>
+
+      <!-- SPECTATOR / MATCH CONTROLS BAR -->
+      <div class="action-controls-bar" id="actionControlsBar" style="display: none;">
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <button class="retro-btn btn-primary" id="btnSpectatorPlay">▶ START DUEL</button>
+          <button class="retro-btn" id="btnSpectatorStep">⏩ STEP TURN</button>
+          <button class="retro-btn" id="btnSpectatorPause">⏸ PAUSE</button>
+          <button class="retro-btn" id="btnResetMatch">🔄 RESET MATCH</button>
+        </div>
+
+        <div class="speed-group">
+          <label for="selectSpeed">SIM SPEED:</label>
+          <select class="retro-select" id="selectSpeed">
+            <option value="turbo">Turbo (250ms)</option>
+            <option value="fast" selected>Fast (800ms)</option>
+            <option value="normal">Normal (1.6s)</option>
+            <option value="slow">Slow (3.0s)</option>
+          </select>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN: SYSTEM ONE TELEMETRY & COMBAT LOG -->
+    <div class="telemetry-column">
+
+      <!-- TELEMETRY CARD -->
+      <div class="telemetry-card">
+        <div class="card-title">
+          <span>🧠 SYSTEM ONE DECISION MATRIX</span>
+          <span style="color: var(--accent-green);" id="lblAiStatus">IDLE</span>
+        </div>
+
+        <div class="telemetry-meta">
+          <div class="meta-box">
+            <span class="meta-label">LATENCY</span>
+            <div class="meta-value" id="valLatency">-- ms</div>
+          </div>
+          <div class="meta-box">
+            <span class="meta-label">CONFIDENCE</span>
+            <div class="meta-value" id="valConfidence">-- %</div>
+          </div>
+          <div class="meta-box">
+            <span class="meta-label">STRATEGY</span>
+            <div class="meta-value" id="valStrategy" style="color: var(--accent-cyan); font-size: 15px;">RECON HUNT</div>
+          </div>
+          <div class="meta-box">
+            <span class="meta-label">ENDPOINT</span>
+            <div class="meta-value" id="valEndpoint" style="font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">API:8000</div>
+          </div>
+        </div>
+
+        <!-- LIVE PROBABILITY METERS -->
+        <div class="meters-list" id="probabilityMeters">
+          <div style="font-size: 8px; color: var(--text-dim); text-align: center; padding: 12px;">
+            AWAITING FIRST ARTILLERY TARGETING...
+          </div>
+        </div>
+
+        <!-- ASCII RADAR TERMINAL -->
+        <div style="font-size: 8px; color: var(--text-dim); margin-bottom: 4px; display: flex; justify-content: space-between;">
+          <span>ASCII RADAR VISION:</span>
+          <span style="color: var(--accent-cyan);">10x10 SECTOR</span>
+        </div>
+        <div class="radar-terminal" id="asciiRadarTerminal">   A B C D E F G H I J
+ 1 . . . . . . . . . .
+ 2 . . . . . . . . . .
+ 3 . . . . . . . . . .
+ 4 . . . . . . . . . .
+ 5 . . . . . . . . . .
+ 6 . . . . . . . . . .
+ 7 . . . . . . . . . .
+ 8 . . . . . . . . . .
+ 9 . . . . . . . . . .
+10 . . . . . . . . . .</div>
+      </div>
+
+      <!-- COMBAT LOG CARD -->
+      <div class="telemetry-card">
+        <div class="card-title">
+          <span>📻 SONAR & COMBAT TELEMETRY</span>
+          <button class="retro-btn btn-sub" id="btnClearLog" style="padding: 2px 6px;">CLR</button>
+        </div>
+        <div class="combat-log" id="combatLog">
+          <div class="log-entry">
+            <span class="log-time">[00:00]</span>
+            <span>SYSTEM INITIALIZED. STANDING BY FOR ORDERS.</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- SHARED CORE -->
+  <script src="/shared/audio-core.js"></script>
+  <script src="/shared/systemone.js"></script>
+  <script src="/shared/nav.js"></script>
+
+  <!-- BATTLESHIP MODULES -->
+  <script src="audio.js"></script>
+  <script src="ships.js"></script>
+  <script src="fx.js"></script>
+  <script src="ai.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

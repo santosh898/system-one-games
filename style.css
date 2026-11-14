@@ -312,14 +312,14 @@ body.crt-active::after {
   transition: all 0.3s ease;
 }
 
-/* TURN VISUAL FEEDBACK ON BATTLEGROUNDS */
+/* TURN VISUAL FEEDBACK ON BATTLEGROUNDS - CLEAN & UNCLUTTERED */
 .board-card.turn-attacker {
-  border-color: var(--accent-cyan);
-  box-shadow: 0 0 16px rgba(0, 240, 255, 0.35), inset 0 0 10px rgba(0, 240, 255, 0.05);
+  border-color: var(--panel-border-bright);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 .board-card.turn-defender {
-  border-color: #23395d;
+  border-color: var(--panel-border);
 }
 
 /* SPEECH BUBBLES ANCHOR & STYLING */
@@ -624,7 +624,9 @@ body.crt-active::after {
 /* DIRECT HIT: COMPLETELY BORDERLESS - ONLY ORGANIC FIRE & BILLOWING SMOKE */
 .grid-cell.hit {
   background: transparent !important;
+  border: none !important;
   border-color: transparent !important;
+  outline: none !important;
   box-shadow: none !important;
   z-index: 10;
   overflow: visible;
@@ -665,7 +667,9 @@ body.crt-active::after {
 /* CONFIRMED SUNK: COMPLETELY BORDERLESS - SUBMERGED WRECK & HEAVY BLACK SMOKE PILLARS */
 .grid-cell.sunk {
   background: transparent !important;
+  border: none !important;
   border-color: transparent !important;
+  outline: none !important;
   box-shadow: none !important;
   z-index: 10;
   overflow: visible;

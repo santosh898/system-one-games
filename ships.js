@@ -71,7 +71,7 @@ function generateShipSVG(shipId, length, isVertical = false) {
         <!-- Touchdown threshold stripes -->
         <rect x="22" y="8" width="6" height="3" fill="#ffcc00" />
         <rect x="22" y="${h - 11}" width="6" height="3" fill="#ffcc00" />
-        <line x1="${w - 28}" y1="8" x2="${w - 28}" y2="${h - 8}" stroke="#ff3344" stroke-width="2" />
+        <line x1="${w - 28}" y1="8" x2="${w - 28}" y2="${h - 8}" stroke="#ffcc00" stroke-width="1.5" />
 
         <!-- Island / Control Bridge Tower on Starboard (Top) -->
         <rect x="${w * 0.52}" y="3" width="22" height="6" rx="1" fill="#58769e" stroke="#89a9d4" stroke-width="1" />
