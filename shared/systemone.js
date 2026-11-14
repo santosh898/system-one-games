@@ -95,10 +95,22 @@ class SystemOneClient {
     const isGoogle = this.isGoogleDecisionsEndpoint(targetUrl);
     const testModel = isGoogle ? 'gemini-decision-1' : this.modelName;
 
-    // Unified payload compatible with both Google Decisions API and System One
-    const testPayload = {
-      model: testModel,
+    // Google Decisions API strictly expects 'input', 'model', and 'questions' (rejects 'state')
+    // Local System One expects 'state' and 'questions'
+    const testPayload = isGoogle ? {
+      model: 'gemini-decision-1',
       input: "System One arcade suite diagnostics connection test.",
+      questions: {
+        ping: {
+          type: "choice",
+          instructions: "Select READY if online.",
+          criteria: {
+            "READY": "Connection active and responsive.",
+            "STANDBY": "Alternative standby mode."
+          }
+        }
+      }
+    } : {
       state: "System One arcade suite diagnostics connection test.",
       questions: {
         ping: {
@@ -178,10 +190,21 @@ class SystemOneClient {
     const isGoogle = this.isGoogleDecisionsEndpoint(this.endpoint);
     const activeModel = isGoogle ? 'gemini-decision-1' : this.modelName;
 
-    const payload = {
-      model: activeModel,
-      input: state, // Google Decisions API format
-      state: state, // System One format
+    // Google Decisions API strictly expects 'input', 'model', and 'questions' (rejects 'state')
+    // Local System One expects 'state' and 'questions'
+    const payload = isGoogle ? {
+      model: 'gemini-decision-1',
+      input: state,
+      questions: {
+        [questionKey]: {
+          type: 'choice',
+          instructions,
+          criteria
+        }
+      }
+    } : {
+      model: this.modelName,
+      state: state,
       questions: {
         [questionKey]: {
           type: 'choice',
