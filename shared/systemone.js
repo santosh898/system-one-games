@@ -73,6 +73,19 @@ class SystemOneClient {
     return this.apiKey;
   }
 
+  parseErrorMessage(status, rawText) {
+    try {
+      const parsed = JSON.parse(rawText);
+      if (parsed.error && parsed.error.message) {
+        return `[HTTP ${status}] ${parsed.error.message}`;
+      }
+      if (parsed.detail) {
+        return `[HTTP ${status}] ${typeof parsed.detail === 'string' ? parsed.detail : JSON.stringify(parsed.detail)}`;
+      }
+    } catch (_) {}
+    return `[HTTP ${status}] ${rawText}`;
+  }
+
   /**
    * Ping / Test Decisions API connection
    */
@@ -135,7 +148,9 @@ class SystemOneClient {
 
       if (!res.ok) {
         const errText = await res.text();
-        return { ok: false, error: `HTTP ${res.status}: ${errText}` };
+        const formattedErr = this.parseErrorMessage(res.status, errText);
+        console.error("Decisions API test error:", res.status, errText);
+        return { ok: false, error: formattedErr, rawError: errText };
       }
 
       const data = await res.json();
@@ -214,7 +229,9 @@ class SystemOneClient {
 
       if (!res.ok) {
         const errText = await res.text();
-        throw new Error(`API error ${res.status}: ${errText}`);
+        const formattedErr = this.parseErrorMessage(res.status, errText);
+        console.error("Decisions API query error:", res.status, errText);
+        throw new Error(formattedErr);
       }
 
       responseData = await res.json();

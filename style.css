@@ -26,7 +26,21 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+::selection {
+  background: var(--accent-cyan);
+  color: #05080f;
+}
+
+button, .retro-btn, canvas, .mode-pill, .grid-cell {
   user-select: none;
+  -webkit-user-select: none;
+}
+
+input, textarea, code, pre, .terminal, .combat-log, .telemetry, [id*="Result"], [id*="Log"] {
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 body {

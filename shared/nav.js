@@ -104,7 +104,7 @@
           </div>
         </div>
 
-        <div id="modalTestResult" style="font-family: var(--font-terminal); font-size: 15px; color: var(--accent-gold); min-height: 20px; line-height: 1.3;"></div>
+        <div id="modalTestResult" style="font-family: var(--font-terminal); font-size: 15px; color: var(--accent-gold); min-height: 24px; line-height: 1.3; user-select: text !important; cursor: text; word-break: break-word; background: rgba(0,0,0,0.3); padding: 6px 8px; border-radius: 3px; border: 1px solid #1a2a44;"></div>
 
         <div style="display: flex; justify-content: space-between; gap: 8px;">
           <button class="retro-btn" id="btnTestEndpoint">⚡ TEST CONNECTION</button>
@@ -155,12 +155,24 @@
 
       const res = await window.sharedSystemOne.testConnection(url, apiKey);
       if (res.ok) {
-        resultEl.textContent = `✓ ONLINE: ${res.model} (${res.latency}ms latency)`;
-        resultEl.style.color = 'var(--accent-green)';
+        resultEl.innerHTML = `<span style="color: var(--accent-green);">✓ ONLINE: ${res.model} (${res.latency}ms latency)</span>`;
         if (window.arcadeAudioCore) window.arcadeAudioCore.playAiBlip();
       } else {
-        resultEl.textContent = `✗ FAILED: ${res.error}`;
-        resultEl.style.color = 'var(--accent-red)';
+        resultEl.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+            <span style="color: var(--accent-red); flex: 1;">✗ FAILED: ${res.error}</span>
+            <button class="retro-btn btn-sub" id="btnCopyModalError" style="font-size: 7px; padding: 3px 6px; white-space: nowrap;">📋 COPY</button>
+          </div>
+        `;
+        const copyBtn = document.getElementById('btnCopyModalError');
+        if (copyBtn) {
+          copyBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            navigator.clipboard.writeText(res.rawError || res.error);
+            copyBtn.textContent = '✓ COPIED!';
+            setTimeout(() => { copyBtn.textContent = '📋 COPY'; }, 2000);
+          });
+        }
       }
     });
 
