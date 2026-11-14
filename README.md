@@ -1,4 +1,4 @@
-# 🕹️ System One Retro Arcade Suite
+# 🕹️ System One Games (Retro Arcade Suite)
 
 A unified 16-bit retro arcade game suite powered by the **TypeSafe AI System One** non-autoregressive decision model (`strands-decider-2B-qwen3.5-v1-2610`).
 
