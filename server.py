@@ -25,7 +25,7 @@ class RetroArcadeHandler(http.server.SimpleHTTPRequestHandler):
         # Add CORS and no-cache for local dev
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Target-URL')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Target-URL, x-goog-api-key, X-Goog-Api-Key')
         super().end_headers()
 
     def do_OPTIONS(self):
@@ -88,11 +88,17 @@ class RetroArcadeHandler(http.server.SimpleHTTPRequestHandler):
             body = self.rfile.read(content_length)
 
             target_url = self.headers.get('X-Target-URL', BACKEND_URL)
+            api_key = self.headers.get('x-goog-api-key') or self.headers.get('X-Goog-Api-Key') or os.environ.get('GEMINI_API_KEY', '')
+
+            req_headers = {'Content-Type': 'application/json'}
+            if api_key:
+                req_headers['x-goog-api-key'] = api_key
+
             try:
                 req = urllib.request.Request(
                     target_url,
                     data=body,
-                    headers={'Content-Type': 'application/json'},
+                    headers=req_headers,
                     method='POST'
                 )
                 with urllib.request.urlopen(req, timeout=30) as resp:

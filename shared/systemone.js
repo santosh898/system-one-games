@@ -1,13 +1,20 @@
 /**
- * Shared TypeSafe System One Client
- * Provides unified API querying, latency & confidence telemetry, proxy fallbacks,
- * and persistent endpoint management across all arcade games.
+ * Shared TypeSafe System One & Google Gemini Decisions API Client
+ * Supports:
+ * 1. Google AI Studio Decisions API:
+ *    - Endpoint: https://generativelanguage.googleapis.com/v1beta/decisions
+ *    - Model: gemini-decision-1
+ *    - Auth: x-goog-api-key header
+ * 2. Local / Custom System One Decision Engines:
+ *    - Endpoint: http://127.0.0.1:8000/v1/systemone
+ *    - Model: strands-decider-2B-qwen3.5-v1-2610
  */
 class SystemOneClient {
   constructor(defaultEndpoint = 'http://127.0.0.1:8000/v1/systemone') {
     this.defaultEndpoint = defaultEndpoint;
     this.endpoint = this.loadEndpoint();
-    this.modelName = 'strands-decider-2B-qwen3.5-v1-2610';
+    this.apiKey = this.loadApiKey();
+    this.updateModelName();
     this.lastLatency = null;
     this.lastConfidence = null;
     this.isQuerying = false;
@@ -18,24 +25,67 @@ class SystemOneClient {
     return saved && saved.trim() ? saved.trim() : this.defaultEndpoint;
   }
 
-  setEndpoint(url) {
-    const clean = (url || '').trim() || this.defaultEndpoint;
-    this.endpoint = clean;
-    localStorage.setItem('systemone_endpoint', clean);
-    window.dispatchEvent(new CustomEvent('systemone:endpoint-changed', { detail: { endpoint: clean } }));
-    return clean;
+  loadApiKey() {
+    return localStorage.getItem('systemone_api_key') || '';
+  }
+
+  updateModelName() {
+    if (this.isGoogleDecisionsEndpoint(this.endpoint)) {
+      this.modelName = 'gemini-decision-1';
+    } else {
+      this.modelName = 'strands-decider-2B-qwen3.5-v1-2610';
+    }
+  }
+
+  isGoogleDecisionsEndpoint(url) {
+    if (!url) return false;
+    return url.includes('googleapis.com') || url.includes('generativelanguage');
+  }
+
+  setEndpoint(url, apiKey = null) {
+    const cleanUrl = (url || '').trim() || this.defaultEndpoint;
+    this.endpoint = cleanUrl;
+    localStorage.setItem('systemone_endpoint', cleanUrl);
+
+    if (apiKey !== null) {
+      this.setApiKey(apiKey);
+    }
+
+    this.updateModelName();
+    window.dispatchEvent(new CustomEvent('systemone:endpoint-changed', {
+      detail: { endpoint: cleanUrl, model: this.modelName, apiKey: this.apiKey }
+    }));
+    return cleanUrl;
+  }
+
+  setApiKey(key) {
+    const cleanKey = (key || '').trim();
+    this.apiKey = cleanKey;
+    localStorage.setItem('systemone_api_key', cleanKey);
+    return cleanKey;
   }
 
   getEndpoint() {
     return this.endpoint;
   }
 
+  getApiKey() {
+    return this.apiKey;
+  }
+
   /**
-   * Ping / Test System One endpoint connection
+   * Ping / Test Decisions API connection
    */
-  async testConnection(customUrl = null) {
+  async testConnection(customUrl = null, customApiKey = null) {
     const targetUrl = customUrl ? customUrl.trim() : this.endpoint;
+    const effectiveKey = customApiKey !== null ? customApiKey.trim() : this.apiKey;
+    const isGoogle = this.isGoogleDecisionsEndpoint(targetUrl);
+    const testModel = isGoogle ? 'gemini-decision-1' : this.modelName;
+
+    // Unified payload compatible with both Google Decisions API and System One
     const testPayload = {
+      model: testModel,
+      input: "System One arcade suite diagnostics connection test.",
       state: "System One arcade suite diagnostics connection test.",
       questions: {
         ping: {
@@ -49,6 +99,13 @@ class SystemOneClient {
       }
     };
 
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    if (effectiveKey) {
+      headers['x-goog-api-key'] = effectiveKey;
+    }
+
     const startTime = performance.now();
     let res = null;
 
@@ -56,17 +113,22 @@ class SystemOneClient {
       try {
         res = await fetch(targetUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify(testPayload)
         });
       } catch (directErr) {
-        // Fallback to proxy
+        // Fallback to local server proxy bridge
+        const proxyHeaders = {
+          'Content-Type': 'application/json',
+          'X-Target-URL': targetUrl
+        };
+        if (effectiveKey) {
+          proxyHeaders['x-goog-api-key'] = effectiveKey;
+        }
+
         res = await fetch('/api/systemone', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Target-URL': targetUrl
-          },
+          headers: proxyHeaders,
           body: JSON.stringify(testPayload)
         });
       }
@@ -81,7 +143,7 @@ class SystemOneClient {
       return {
         ok: true,
         latency: data.latency_ms ? Math.round(data.latency_ms) : latency,
-        model: data.model || this.modelName
+        model: isGoogle ? 'gemini-decision-1' : (data.model || this.modelName)
       };
     } catch (err) {
       return { ok: false, error: err.message || 'Connection failed' };
@@ -89,18 +151,22 @@ class SystemOneClient {
   }
 
   /**
-   * Execute a System One Choice Question
+   * Execute a Choice Decision Question (Single Forward Pass)
    */
   async queryChoice({ state, questionKey = 'decision', instructions = '', criteria = {} }) {
     if (this.isQuerying) {
-      throw new Error('System One request already in progress');
+      throw new Error('Decision model request already in progress');
     }
 
     this.isQuerying = true;
     const startTime = performance.now();
+    const isGoogle = this.isGoogleDecisionsEndpoint(this.endpoint);
+    const activeModel = isGoogle ? 'gemini-decision-1' : this.modelName;
 
     const payload = {
-      state,
+      model: activeModel,
+      input: state, // Google Decisions API format
+      state: state, // System One format
       questions: {
         [questionKey]: {
           type: 'choice',
@@ -110,6 +176,13 @@ class SystemOneClient {
       }
     };
 
+    const reqHeaders = {
+      'Content-Type': 'application/json'
+    };
+    if (this.apiKey) {
+      reqHeaders['x-goog-api-key'] = this.apiKey;
+    }
+
     let responseData = null;
     let endpointUsed = this.endpoint;
 
@@ -118,18 +191,23 @@ class SystemOneClient {
       try {
         res = await fetch(endpointUsed, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: reqHeaders,
           body: JSON.stringify(payload)
         });
       } catch (netErr) {
-        // Retry through local proxy bridge
+        // Retry through local proxy bridge (handles CORS if calling Google or remote endpoint)
         endpointUsed = '/api/systemone';
+        const proxyHeaders = {
+          'Content-Type': 'application/json',
+          'X-Target-URL': this.endpoint
+        };
+        if (this.apiKey) {
+          proxyHeaders['x-goog-api-key'] = this.apiKey;
+        }
+
         res = await fetch(endpointUsed, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Target-URL': this.endpoint
-          },
+          headers: proxyHeaders,
           body: JSON.stringify(payload)
         });
       }
@@ -148,13 +226,15 @@ class SystemOneClient {
     this.isQuerying = false;
     const elapsed = Math.round(performance.now() - startTime);
     this.lastLatency = responseData.latency_ms ? Math.round(responseData.latency_ms) : elapsed;
-    if (responseData.model) {
+    if (isGoogle) {
+      this.modelName = 'gemini-decision-1';
+    } else if (responseData.model) {
       this.modelName = responseData.model;
     }
 
     const answer = responseData.answers?.[questionKey] || responseData.answers?.decision || Object.values(responseData.answers || {})[0];
     if (!answer) {
-      throw new Error(`No answer received for question '${questionKey}' in System One response.`);
+      throw new Error(`No answer received for question '${questionKey}' in Decisions API response.`);
     }
 
     const choice = (answer.choice || '').trim();
